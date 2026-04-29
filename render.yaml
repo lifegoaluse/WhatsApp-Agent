@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: whatsapp-agent-suite
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_VERSION
+        value: 18.0.0
+      - key: DATA_DIR
+        value: /opt/render/project/src/data
+    disk:
+      name: whatsapp-sessions
+      mountPath: /opt/render/project/src/data
+      sizeGB: 1
