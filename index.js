@@ -1,22 +1,27 @@
-const express = require('express');
-const http = require('http');
-const { Server } = require('socket.io');
-const path = require('path');
-const fs = require('fs');
-const { 
+import express from 'express';
+import http from 'http';
+import { Server } from 'socket.io';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
+import { 
     makeWASocket, 
     useMultiFileAuthState, 
     DisconnectReason, 
     fetchLatestBaileysVersion, 
     makeInMemoryStore, 
     jidDecode 
-} = require('@whiskeysockets/baileys');
-const pino = require('pino');
-const { Boom } = require('@hapi/boom');
-const qrcode = require('qrcode');
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
-const cors = require('cors');
+} from '@whiskeysockets/baileys';
+import pino from 'pino';
+import { Boom } from '@hapi/boom';
+import qrcode from 'qrcode';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+import cors from 'cors';
+
+// Handle __dirname in ESM
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Configuration
 const PORT = process.env.PORT || 3000;
@@ -91,7 +96,7 @@ async function startWhatsApp(userId, socketId = null) {
             if (shouldReconnect) {
                 startWhatsApp(userId);
             } else {
-                fs.rmSync(userSessionDir, { recursive: true, force: true });
+                if (fs.existsSync(userSessionDir)) fs.rmSync(userSessionDir, { recursive: true, force: true });
                 sessions.delete(userId);
             }
         } else if (connection === 'open') {
