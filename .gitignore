@@ -1,0 +1,6 @@
+node_modules
+data/sessions
+data/campaigns
+data/history
+.env
+*.log

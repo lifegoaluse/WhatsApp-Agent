@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WhatsApp Agent | Premium Automation Suite</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
+    <style>
+        :root {
+            --bg-deep: #08101e;
+            --bg-card: rgba(16, 24, 39, 0.7);
+            --accent-primary: #3b82f6;
+            --accent-secondary: #8b5cf6;
+            --text-main: #f3f4f6;
+            --text-dim: #9ca3af;
+            --success: #10b981;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --glass-gradient: linear-gradient(135deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+        }
+
+        body {
+            background: var(--bg-deep);
+            color: var(--text-main);
+            overflow-x: hidden;
+            min-height: 100vh;
+        }
+
+        /* --- Animations --- */
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes slideIn { from { transform: translateX(-20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        @keyframes pulse { 0% { opacity: 0.5; } 50% { opacity: 1; } 100% { opacity: 0.5; } }
+
+        /* --- Layout --- */
+        .app-container {
+            display: flex;
+            height: 100vh;
+            display: none; /* Hidden until auth */
+        }
+
+        .auth-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            background: radial-gradient(circle at top right, #1e293b, #08101e);
+        }
+
+        /* --- Glassmorphism Components --- */
+        .glass-card {
+            background: var(--bg-card);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid var(--glass-border);
+            border-radius: 20px;
+            padding: 2rem;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        }
+
+        .sidebar {
+            width: 280px;
+            background: rgba(8, 16, 30, 0.8);
+            backdrop-filter: blur(20px);
+            border-right: 1px solid var(--glass-border);
+            padding: 2rem 1.5rem;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .main-content {
+            flex: 1;
+            padding: 2rem;
+            overflow-y: auto;
+            background: radial-gradient(circle at bottom left, #111827, #08101e);
+        }
+
+        /* --- Sidebar Menu --- */
+        .logo {
+            font-size: 1.5rem;
+            font-weight: 800;
+            background: linear-gradient(to right, #3b82f6, #8b5cf6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 3rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .menu-item {
+            padding: 1rem;
+            border-radius: 12px;
+            cursor: pointer;
+            margin-bottom: 0.5rem;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            color: var(--text-dim);
+            font-weight: 500;
+        }
+
+        .menu-item:hover, .menu-item.active {
+            background: rgba(59, 130, 246, 0.1);
+            color: var(--text-main);
+            border-left: 4px solid var(--accent-primary);
+        }
+
+        /* --- Auth Form --- */
+        .auth-card {
+            width: 400px;
+            text-align: center;
+            animation: fadeIn 0.6s ease-out;
+        }
+
+        .auth-card h2 { font-size: 2rem; margin-bottom: 0.5rem; }
+        .auth-card p { color: var(--text-dim); margin-bottom: 2rem; }
+
+        input {
+            width: 100%;
+            padding: 0.8rem 1rem;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--glass-border);
+            border-radius: 10px;
+            color: white;
+            margin-bottom: 1rem;
+            outline: none;
+            transition: border-color 0.3s;
+        }
+
+        input:focus { border-color: var(--accent-primary); }
+
+        .btn {
+            width: 100%;
+            padding: 0.8rem;
+            border-radius: 10px;
+            border: none;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s;
+            margin-top: 1rem;
+        }
+
+        .btn-primary { background: linear-gradient(to right, #3b82f6, #8b5cf6); color: white; }
+        .btn-primary:hover { opacity: 0.9; transform: translateY(-2px); }
+
+        /* --- Dashboard Stats --- */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            padding: 1.5rem;
+            border-radius: 15px;
+            background: var(--glass-gradient);
+            border: 1px solid var(--glass-border);
+            animation: fadeIn 0.8s ease-out;
+        }
+
+        .stat-card .label { color: var(--text-dim); font-size: 0.9rem; margin-bottom: 0.5rem; }
+        .stat-card .value { font-size: 1.8rem; font-weight: 700; }
+
+        /* --- Sections --- */
+        .section { display: none; animation: fadeIn 0.4s ease; }
+        .section.active { display: block; }
+
+        /* --- QR Display --- */
+        #qr-container {
+            width: 250px;
+            height: 250px;
+            margin: 2rem auto;
+            background: white;
+            border-radius: 15px;
+            padding: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+
+        #qr-container img { width: 100%; height: 100%; }
+        
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 0.5rem;
+        }
+        .status-online { background: var(--success); box-shadow: 0 0 10px var(--success); }
+        .status-offline { background: var(--danger); }
+
+        /* --- Mobile Responsive --- */
+        @media (max-width: 768px) {
+            .sidebar { display: none; }
+            .app-container { flex-direction: column; }
+            .main-content { padding: 1rem; }
+            .auth-card { width: 90%; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Authentication -->
+    <div class="auth-container" id="auth-view">
+        <div class="glass-card auth-card">
+            <div class="logo">WA AGENT<span>⚡</span></div>
+            <h2 id="auth-title">Welcome Back</h2>
+            <p id="auth-desc">Please enter your credentials to login.</p>
+            
+            <input type="text" id="username" placeholder="Username">
+            <input type="password" id="password" placeholder="Password">
+            
+            <button class="btn btn-primary" onclick="handleAuth()" id="auth-btn">Sign In</button>
+            <p style="margin-top: 1rem; font-size: 0.8rem; cursor: pointer; color: var(--accent-primary);" onclick="toggleAuthMode()" id="auth-toggle">Need an account? Sign Up</p>
+        </div>
+    </div>
+
+    <!-- Main App -->
+    <div class="app-container" id="app-view">
+        <div class="sidebar">
+            <div class="logo">WA AGENT<span>⚡</span></div>
+            <div class="menu-item active" onclick="showSection('dashboard')">🏠 Dashboard</div>
+            <div class="menu-item" onclick="showSection('instances')">📱 WhatsApp Instance</div>
+            <div class="menu-item" onclick="showSection('bulk')">✉️ Bulk Sender</div>
+            <div class="menu-item" onclick="showSection('validator')">✅ Number Filter</div>
+            <div class="menu-item" onclick="showSection('auto-reply')">🤖 Automation</div>
+            <div class="menu-item" onclick="showSection('history')">📊 Reports</div>
+            
+            <div style="margin-top: auto;">
+                <div class="menu-item" onclick="logout()" style="color: var(--danger);">🚪 Logout</div>
+            </div>
+        </div>
+
+        <div class="main-content">
+            <!-- Dashboard Section -->
+            <div id="dashboard" class="section active">
+                <h1 style="margin-bottom: 2rem;">Overview</h1>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="label">Total Sent</div>
+                        <div class="value" id="stat-sent">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="label">Active Campaigns</div>
+                        <div class="value" id="stat-active">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="label">Blocked (Ban Risk)</div>
+                        <div class="value" id="stat-blocked" style="color: var(--danger);">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="label">Instance Status</div>
+                        <div class="value" id="stat-status" style="font-size: 1.2rem;">Disconnected</div>
+                    </div>
+                </div>
+
+                <div class="glass-card" style="margin-top: 2rem;">
+                    <h3>Live Activity Log</h3>
+                    <div id="activity-log" style="height: 300px; overflow-y: auto; margin-top: 1rem; font-size: 0.85rem; padding: 1rem; background: rgba(0,0,0,0.2); border-radius: 10px;">
+                        <div style="color: var(--text-dim);">System initialized...</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Instances Section -->
+            <div id="instances" class="section">
+                <h1>WhatsApp Instance</h1>
+                <p style="color: var(--text-dim); margin-bottom: 2rem;">Link your account via QR code to start automating.</p>
+                
+                <div class="glass-card" style="max-width: 500px; margin: 0 auto; text-align: center;">
+                    <div id="qr-container">
+                        <div id="qr-placeholder">Initializing...</div>
+                    </div>
+                    <h3 id="instance-status-text">Status: Disconnected</h3>
+                    <p id="instance-id-text" style="font-size: 0.8rem; color: var(--text-dim); margin-top: 0.5rem;"></p>
+                    
+                    <div style="display: flex; gap: 1rem; margin-top: 2rem;">
+                        <button class="btn btn-primary" onclick="initWhatsApp()">Link Account</button>
+                        <button class="btn" style="background: var(--danger); color: white;" onclick="logoutWhatsApp()">Logout Device</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bulk Sender Section -->
+            <div id="bulk" class="section">
+                <h1>Bulk Messaging</h1>
+                <div class="glass-card" style="margin-top: 2rem;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">
+                        <div>
+                            <label class="label">Campaign Name</label>
+                            <input type="text" id="campaign-name" placeholder="e.g. Summer Sale 2026">
+                            
+                            <label class="label">Contacts (Paste or Upload Excel)</label>
+                            <textarea id="contacts-paste" style="width: 100%; height: 150px; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); border-radius: 10px; color: white; padding: 1rem; margin-bottom: 1rem;" placeholder="Enter numbers separated by newline..."></textarea>
+                            <input type="file" id="excel-upload" accept=".xlsx, .csv">
+                        </div>
+                        <div>
+                            <label class="label">Message Content</label>
+                            <textarea id="message-text" style="width: 100%; height: 200px; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); border-radius: 10px; color: white; padding: 1rem; margin-bottom: 1rem;" placeholder="Hello {name}, checkout our latest offer!"></textarea>
+                            
+                            <div style="display: flex; gap: 1rem;">
+                                <div>
+                                    <label class="label">Delay (seconds)</label>
+                                    <input type="number" id="campaign-delay" value="5" min="1">
+                                </div>
+                                <div style="flex: 1;">
+                                    <label class="label">&nbsp;</label>
+                                    <button class="btn btn-primary" onclick="startCampaign()" style="margin-top: 0;">Launch Campaign 🚀</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Number Filter Section -->
+            <div id="validator" class="section">
+                <h1>Number Filter</h1>
+                <p style="color: var(--text-dim); margin-bottom: 2rem;">Check which numbers are registered on WhatsApp.</p>
+                <div class="glass-card">
+                    <textarea id="validator-input" style="width: 100%; height: 150px; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); border-radius: 10px; color: white; padding: 1rem; margin-bottom: 1rem;" placeholder="Enter numbers (one per line)..."></textarea>
+                    <button class="btn btn-primary" onclick="validateNumbers()">Start Verification</button>
+                    
+                    <div id="validator-results" style="margin-top: 2rem; display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                        <!-- Results injected here -->
+                    </div>
+                </div>
+            </div>
+
+            <div id="auto-reply" class="section"><h1>Automation</h1><p>Keyword triggers are active (Check index.js for examples).</p></div>
+            <div id="history" class="section"><h1>Reports</h1><p>Full campaign logs are stored in data/history.</p></div>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        let currentUser = null;
+        let isRegisterMode = false;
+
+        // --- Navigation ---
+        function showSection(id) {
+            document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+            document.querySelectorAll('.menu-item').forEach(m => m.classList.remove('active'));
+            document.getElementById(id).classList.add('active');
+            event.currentTarget.classList.add('active');
+        }
+
+        // --- Auth ---
+        async function handleAuth() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const endpoint = isRegisterMode ? '/api/auth/register' : '/api/auth/login';
+
+            try {
+                const res = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                const data = await res.json();
+
+                if (data.error) return alert(data.error);
+
+                if (isRegisterMode) {
+                    alert('Registration successful! Please login.');
+                    toggleAuthMode();
+                } else {
+                    currentUser = data.user;
+                    localStorage.setItem('wa_token', data.token);
+                    localStorage.setItem('wa_user', JSON.stringify(data.user));
+                    initApp();
+                }
+            } catch (err) {
+                alert('Connection failed');
+            }
+        }
+
+        function toggleAuthMode() {
+            isRegisterMode = !isRegisterMode;
+            document.getElementById('auth-title').innerText = isRegisterMode ? 'Create Account' : 'Welcome Back';
+            document.getElementById('auth-desc').innerText = isRegisterMode ? 'Join the premium automation suite.' : 'Please enter your credentials to login.';
+            document.getElementById('auth-btn').innerText = isRegisterMode ? 'Sign Up' : 'Sign In';
+            document.getElementById('auth-toggle').innerText = isRegisterMode ? 'Already have an account? Sign In' : 'Need an account? Sign Up';
+        }
+
+        function initApp() {
+            document.getElementById('auth-view').style.display = 'none';
+            document.getElementById('app-view').style.display = 'flex';
+            logActivity(`User ${currentUser.username} logged in.`);
+            socket.emit('init-session', { userId: currentUser.id });
+        }
+
+        function logout() {
+            localStorage.clear();
+            location.reload();
+        }
+
+        // --- WhatsApp Logic ---
+        function initWhatsApp() {
+            socket.emit('init-session', { userId: currentUser.id });
+            logActivity('Requesting QR code...');
+        }
+
+        function logoutWhatsApp() {
+            socket.emit('logout-session', { userId: currentUser.id });
+            logActivity('Logging out WhatsApp...');
+        }
+
+        socket.on('qr', ({ userId, qr }) => {
+            if (userId !== currentUser?.id) return;
+            const container = document.getElementById('qr-container');
+            container.innerHTML = `<img src="${qr}" alt="QR Code">`;
+            document.getElementById('instance-status-text').innerText = 'Status: Scan to Connect';
+            logActivity('QR Code generated.');
+        });
+
+        socket.on('session-update', ({ userId, status }) => {
+            if (userId !== currentUser?.id) return;
+            const statusEl = document.getElementById('stat-status');
+            const statusText = document.getElementById('instance-status-text');
+            
+            statusEl.innerText = status.charAt(0).toUpperCase() + status.slice(1);
+            statusText.innerText = `Status: ${statusEl.innerText}`;
+            
+            if (status === 'connected') {
+                document.getElementById('qr-container').innerHTML = '<div style="color: var(--success); font-size: 3rem;">✅</div>';
+                statusEl.style.color = 'var(--success)';
+                logActivity('WhatsApp Connected Successfully.');
+            } else {
+                statusEl.style.color = 'var(--danger)';
+            }
+        });
+
+        // --- Campaign ---
+        function startCampaign() {
+            const name = document.getElementById('campaign-name').value;
+            const contactsRaw = document.getElementById('contacts-paste').value;
+            const message = document.getElementById('message-text').value;
+            const delay = parseInt(document.getElementById('campaign-delay').value);
+
+            const contacts = contactsRaw.split('\n').map(c => c.trim()).filter(c => c);
+
+            if (!name || !contacts.length || !message) return alert('Please fill all fields');
+
+            socket.emit('start-campaign', {
+                userId: currentUser.id,
+                name,
+                contacts,
+                message,
+                delay
+            });
+
+            logActivity(`Campaign "${name}" launched with ${contacts.length} contacts.`);
+            showSection('dashboard');
+        }
+
+        socket.on('campaign-progress', (data) => {
+            document.getElementById('stat-sent').innerText = data.sent;
+            logActivity(`Progress: ${data.sent}/${data.total} sent.`);
+        });
+
+        socket.on('campaign-update', (data) => {
+            if (data.status === 'completed') {
+                logActivity(`Campaign "${data.name}" completed!`);
+                alert(`Campaign "${data.name}" finished.`);
+            }
+        });
+
+        // --- Validator ---
+        function validateNumbers() {
+            const input = document.getElementById('validator-input').value;
+            const numbers = input.split('\n').map(n => n.trim()).filter(n => n);
+            if (!numbers.length) return alert('Enter numbers to check');
+
+            logActivity(`Starting validation for ${numbers.length} numbers...`);
+            socket.emit('validate-numbers', { userId: currentUser.id, numbers });
+        }
+
+        socket.on('validator-results', (results) => {
+            const container = document.getElementById('validator-results');
+            container.innerHTML = '';
+            results.forEach(res => {
+                const div = document.createElement('div');
+                div.className = 'stat-card';
+                div.style.borderLeft = `4px solid ${res.exists ? 'var(--success)' : 'var(--danger)'}`;
+                div.innerHTML = `
+                    <div style="font-size: 0.9rem;">${res.number}</div>
+                    <div style="font-weight: 700; color: ${res.exists ? 'var(--success)' : 'var(--danger)'}">
+                        ${res.exists ? 'Registered' : 'Not Found'}
+                    </div>
+                `;
+                container.appendChild(div);
+            });
+            logActivity('Validation completed.');
+        });
+
+        // --- Helpers ---
+        function logActivity(msg) {
+            const log = document.getElementById('activity-log');
+            const entry = document.createElement('div');
+            entry.style.marginBottom = '5px';
+            entry.innerHTML = `<span style="color: var(--accent-primary)">[${new Date().toLocaleTimeString()}]</span> ${msg}`;
+            log.prepend(entry);
+        }
+
+        // Persistence check
+        window.onload = () => {
+            const savedUser = localStorage.getItem('wa_user');
+            if (savedUser) {
+                currentUser = JSON.parse(savedUser);
+                initApp();
+            }
+        };
+    </script>
+</body>
+</html>
