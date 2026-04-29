@@ -7,7 +7,7 @@ services:
     startCommand: npm start
     envVars:
       - key: NODE_VERSION
-        value: 20.0.0
+        value: 20.12.2
       - key: DATA_DIR
         value: /opt/render/project/src/data
     disk:
