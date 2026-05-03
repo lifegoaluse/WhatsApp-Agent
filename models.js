@@ -8,7 +8,8 @@ const AccountSchema = new mongoose.Schema({
     status: { type: String, default: 'waiting' },
     lastActive: { type: Date, default: Date.now },
     createdAt: { type: Date, default: Date.now },
-    group: { type: String, default: 'Default' }
+    group: { type: String, default: 'Default' },
+    isVisible: { type: Boolean, default: true }
 });
 AccountSchema.index({ userId: 1 });
 

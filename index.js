@@ -154,6 +154,8 @@ const requestHandler = async (req, res) => {
     if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
 
     const url = req.url.split('?')[0];
+    if (url === '/ping') return json(res, { success: true, message: 'pong' });
+    
     if (req.method === 'GET' && (url === '/' || url === '/index.html')) {
         return fs.readFile(path.join(__dirname, 'index.html'), (e, d) => { res.writeHead(200, { 'Content-Type': 'text/html' }); res.end(d); });
     }
@@ -189,7 +191,8 @@ const requestHandler = async (req, res) => {
 
     // Accounts
     if (url === '/api/v2/accounts' && req.method === 'GET') {
-        const accs = await Account.find(me.role === ROLES.SUPERADMIN ? {} : { userId: me.userId }).lean();
+        const query = me.role === ROLES.SUPERADMIN ? {} : { userId: me.userId, isVisible: true };
+        const accs = await Account.find(query).lean();
         const today = new Date().setHours(0,0,0,0);
         const result = await Promise.all(accs.map(async a => {
             const bot = bots.get(a.id);
@@ -211,10 +214,29 @@ const requestHandler = async (req, res) => {
         const bot = bots.get(id); if(bot) bot.status = status;
         return json(res, { success: true });
     }
+    if (url === '/api/v2/account/visibility' && req.method === 'POST') {
+        const { id, isVisible } = await parseBody(req);
+        if (me.role !== ROLES.SUPERADMIN) return json(res, { error: 'Forbidden' }, 403);
+        await Account.findOneAndUpdate({ id }, { isVisible });
+        return json(res, { success: true });
+    }
+
     if (url === '/api/v2/account/delete' && req.method === 'POST') {
         const { id } = await parseBody(req);
         await Account.findOneAndDelete({ id });
-        const bot = bots.get(id); if(bot?.sock) bot.sock.logout().catch(() => {}); bots.delete(id);
+        const bot = bots.get(id); 
+        if (bot?.sock) {
+            try { await bot.sock.logout(); } catch(e) {}
+            try { bot.sock.ws.close(); } catch(e) {}
+        }
+        bots.delete(id);
+        
+        // Remove session directory
+        const sessDir = path.join(SESSION_DIR, id);
+        if (fs.existsSync(sessDir)) {
+            try { fs.rmSync(sessDir, { recursive: true, force: true }); } catch(e) { console.error(`[SYSTEM] Failed to delete session dir: ${sessDir}`, e); }
+        }
+        
         return json(res, { success: true });
     }
     if (url === '/api/v2/accounts/qr' && req.method === 'GET') {
@@ -252,6 +274,30 @@ const requestHandler = async (req, res) => {
         await Batch.insertMany(batchEntries);
         await BatchItem.insertMany(itemEntries);
         return json(res, { success: true, count: valid.length, batches: count });
+    }
+
+    if (url === '/api/v2/numbers/check' && req.method === 'POST') {
+        const { accId, numbers } = await parseBody(req);
+        const bot = bots.get(accId);
+        if (!bot || bot.status !== 'active') return json(res, { error: 'Account not active or not found' }, 400);
+        
+        const results = [];
+        // Baileys onWhatsApp can take an array, but we'll do it in chunks to be safe
+        for (let i = 0; i < numbers.length; i += 20) {
+            const chunk = numbers.slice(i, i + 20).map(n => n.replace(/\D/g, '') + '@s.whatsapp.net');
+            try {
+                const exists = await bot.sock.onWhatsApp(...chunk);
+                const existSet = new Set(exists.map(e => e.jid.split('@')[0]));
+                numbers.slice(i, i + 20).forEach(num => {
+                    const cleanNum = num.replace(/\D/g, '');
+                    results.push({ number: num, exists: existSet.has(cleanNum) });
+                });
+            } catch (e) {
+                console.error(`[FILTER] Error checking chunk:`, e);
+                numbers.slice(i, i + 20).forEach(num => results.push({ number: num, exists: false, error: true }));
+            }
+        }
+        return json(res, { success: true, results });
     }
 
     if (url === '/api/v2/campaigns/start' && req.method === 'POST') {
@@ -318,4 +364,19 @@ server.listen(PORT, async () => {
     await connectDB();
     (await Account.find({})).forEach(a => initBot(a.userId, a.id));
     (await Campaign.find({ status: 'running' })).forEach(c => processV2Campaign(c.id));
+
+    // ── RENDER 24/7 PING ──────────────────────────────────────────────────────
+    const URL_TO_PING = process.env.RENDER_EXTERNAL_URL || process.env.PUBLIC_URL;
+    if (URL_TO_PING) {
+        console.log(`[SYSTEM] Self-ping started for: ${URL_TO_PING}`);
+        setInterval(() => {
+            http.get(`${URL_TO_PING}/ping`, (res) => {
+                console.log(`[PING] Status: ${res.statusCode} at ${new Date().toISOString()}`);
+            }).on('error', (err) => {
+                console.error(`[PING] Error: ${err.message}`);
+            });
+        }, 8 * 60 * 1000); // Ping every 8 minutes
+    } else {
+        console.warn("[SYSTEM] RENDER_EXTERNAL_URL not found. Skipping self-ping.");
+    }
 });

@@ -129,6 +129,7 @@
             
             <div class="nav-header">Advanced Modules</div>
             <div class="nav-item" onclick="showView('bulk-splitter', this)"><i class="fas fa-bolt"></i> Fast Bulk Splitter</div>
+            <div class="nav-item" onclick="showView('number-filter', this)"><i class="fas fa-filter"></i> Number Filter</div>
             
             <div class="nav-header">Customer Care</div>
             <div class="nav-item" onclick="showView('inbox', this)"><i class="fas fa-envelope-open-text"></i> Unified Inbox</div>
@@ -249,6 +250,32 @@
                             <div class="table-wrap" style="max-height: 500px; overflow-y: auto;">
                                 <table><thead><tr><th>Name</th><th>Number</th></tr></thead><tbody id="bs-preview-body"></tbody></table>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- NUMBER FILTER -->
+            <div id="v-number-filter" class="view-section">
+                <div class="header-row"><h2>Number Filter (WhatsApp Checker)</h2></div>
+                <div style="display:grid; grid-template-columns: 1fr 1.5fr; gap:30px;">
+                    <div class="panel">
+                        <label>Select Active Account</label>
+                        <select id="nf-acc-select" class="form-input"></select>
+                        <label>Numbers to Check (One per line)</label>
+                        <textarea id="nf-numbers" class="form-input" rows="12" placeholder="919876543210&#10;918888888888"></textarea>
+                        <button class="btn btn-primary" style="width:100%; justify-content:center;" onclick="filterNumbers()">Start Filtering</button>
+                    </div>
+                    <div class="panel">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+                            <h3>Filter Results</h3>
+                            <div style="display:flex; gap:10px;">
+                                <button class="btn btn-outline btn-sm" style="color:var(--primary);" onclick="copyNumbers(true)">Copy Valid</button>
+                                <button class="btn btn-outline btn-sm" style="color:var(--red);" onclick="copyNumbers(false)">Copy Invalid</button>
+                            </div>
+                        </div>
+                        <div class="table-wrap" style="max-height: 400px; overflow-y: auto;">
+                            <table><thead><tr><th>Number</th><th>Status</th></tr></thead><tbody id="nf-results-table"></tbody></table>
                         </div>
                     </div>
                 </div>
@@ -480,15 +507,16 @@
             if (filter !== 'all') data = data.filter(a => a.status === filter);
             accounts = data;
 
+            const user = JSON.parse(localStorage.getItem('WA_PRO_USER') || '{}');
             document.getElementById('accGrid').innerHTML = accounts.map(a => `
-                <div class="stat-card" style="border-top: 4px solid ${a.status==='active'?'var(--primary)':'var(--red)'}">
+                <div class="stat-card" style="border-top: 4px solid ${a.status==='active'?'var(--primary)':'var(--red)'}; ${!a.isVisible ? 'opacity: 0.6;' : ''}">
                     <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
                         <div style="display:flex; align-items:center; gap:10px;">
                             <div style="width:40px; height:40px; background:rgba(255,255,255,0.05); border-radius:12px; display:flex; align-items:center; justify-content:center; font-size:1.2em;">
                                 <i class="fab fa-whatsapp" style="color: ${a.status==='active'?'var(--primary)':'var(--text-muted)'}"></i>
                             </div>
                             <div>
-                                <b style="display:block;">${a.name}</b>
+                                <b style="display:block;">${a.name} ${!a.isVisible ? '<i class="fas fa-eye-slash" style="font-size:0.8em; color:var(--red);"></i>' : ''}</b>
                                 <span style="font-size:0.7em; color:var(--text-muted);">${a.phoneNumber || 'Unlinked'}</span>
                             </div>
                         </div>
@@ -511,10 +539,13 @@
                         <span>ID: ${a.id}</span>
                     </div>
 
-                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+                    <div style="display:grid; grid-template-columns: ${user.role === 'superadmin' ? '1fr 1fr 1fr' : '1fr 1fr'}; gap:10px;">
                         ${a.status !== 'active' ? 
-                            `<button class="btn btn-primary btn-sm" style="justify-content:center;" onclick="showQR('${a.id}')">Authenticate</button>` : 
-                            `<button class="btn btn-outline btn-sm" style="justify-content:center; color:var(--yellow);" onclick="toggleAccStatus('${a.id}', 'paused')"><i class="fas fa-pause"></i> Pause</button>`
+                            `<button class="btn btn-primary btn-sm" style="justify-content:center;" onclick="showQR('${a.id}')">Auth</button>` : 
+                            `<button class="btn btn-outline btn-sm" style="justify-content:center; color:var(--yellow);" onclick="toggleAccStatus('${a.id}', 'paused')"><i class="fas fa-pause"></i></button>`
+                        }
+                        ${user.role === 'superadmin' ? 
+                            `<button class="btn btn-outline btn-sm" style="justify-content:center; color:${a.isVisible ? 'var(--text-muted)' : 'var(--primary)'};" onclick="toggleVisibility('${a.id}', ${a.isVisible})"><i class="fas fa-eye${a.isVisible ? '-slash' : ''}"></i></button>` : ''
                         }
                         <button class="btn btn-outline btn-sm" style="color:var(--red); justify-content:center;" onclick="deleteAcc('${a.id}')"><i class="fas fa-trash"></i></button>
                     </div>
@@ -530,10 +561,23 @@
                 ${accSelectors}
             `;
             document.getElementById('s-active').innerText = accounts.filter(a => a.status==='active').length;
+            
+            // Update filter dropdown
+            const activeAccs = accounts.filter(a => a.status === 'active');
+            const nfSelect = document.getElementById('nf-acc-select');
+            if(nfSelect) {
+                nfSelect.innerHTML = activeAccs.map(a => `<option value="${a.id}">${a.name} (${a.phoneNumber})</option>`).join('') || '<option value="">No Active Devices</option>';
+            }
         }
 
         async function toggleAccStatus(id, action) {
             await callAPI('/api/v2/accounts/control', { method:'POST', body: JSON.stringify({id, action}), headers:{'Content-Type':'application/json'}});
+            loadAccounts();
+        }
+
+        async function toggleVisibility(id, current) {
+            await callAPI('/api/v2/account/visibility', { method:'POST', body: JSON.stringify({id, isVisible: !current}), headers:{'Content-Type':'application/json'}});
+            notify(`Visibility Updated`, 'success');
             loadAccounts();
         }
 
@@ -885,6 +929,62 @@
                 notify('Log Archives Purged.', 'success');
                 loadHistory();
             }
+        }
+
+        async function filterNumbers() {
+            const accId = document.getElementById('nf-acc-select').value;
+            const numbersText = document.getElementById('nf-numbers').value;
+            let numbers = numbersText.split('\n')
+                .map(n => n.trim().replace(/\D/g, '')) // Formatting: Keep only digits
+                .filter(n => n.length >= 8);
+            
+            if(!accId) return notify('Please select an account', 'error');
+            if(numbers.length === 0) return notify('No valid numbers to check', 'error');
+            
+            notify(`Checking ${numbers.length} numbers...`, 'info');
+            const table = document.getElementById('nf-results-table');
+            table.innerHTML = '<tr><td colspan="2" style="text-align:center; padding:20px;"><i class="fas fa-spinner fa-spin"></i> Processing batch... <span id="nf-prog">0</span>%</td></tr>';
+            
+            try {
+                window.lastFilterResults = [];
+                // Process in chunks of 50 to show real progress
+                const chunkSize = 50;
+                for (let i = 0; i < numbers.length; i += chunkSize) {
+                    const chunk = numbers.slice(i, i + chunkSize);
+                    const d = await callAPI('/api/v2/numbers/check', { 
+                        method: 'POST', 
+                        body: JSON.stringify({ accId, numbers: chunk }), 
+                        headers: { 'Content-Type': 'application/json' } 
+                    });
+                    
+                    if (d.success) {
+                        window.lastFilterResults.push(...d.results);
+                        const progress = Math.round(((i + chunk.length) / numbers.length) * 100);
+                        const progEl = document.getElementById('nf-prog');
+                        if(progEl) progEl.innerText = progress;
+                    }
+                }
+                
+                // Final Render
+                table.innerHTML = window.lastFilterResults.map(r => `
+                    <tr>
+                        <td>${r.number}</td>
+                        <td><span class="badge ${r.exists ? 'active' : 'failed'}">${r.exists ? 'WA Found' : 'Not Found'}</span></td>
+                    </tr>
+                `).join('');
+                notify(`Filtering Complete! Found ${window.lastFilterResults.filter(r => r.exists).length} WA accounts.`, 'success');
+                
+            } catch (e) { 
+                console.error(e);
+                notify('Server error during filtering', 'error'); 
+            }
+        }
+
+        function copyNumbers(isValid) {
+            if(!window.lastFilterResults) return notify('No results to copy', 'error');
+            const list = window.lastFilterResults.filter(r => r.exists === isValid).map(r => r.number).join('\n');
+            if(!list) return notify('No numbers found for this filter', 'info');
+            navigator.clipboard.writeText(list).then(() => notify('Copied to clipboard!', 'success'));
         }
 
         function logout() { localStorage.removeItem('WA_PRO_TOKEN'); location.reload(); }
