@@ -1,16 +1,20 @@
 services:
   - type: web
-    name: whatsapp-agent-suite
+    name: whatsapp-bulk-sender
     env: node
     plan: free
     buildCommand: npm install
-    startCommand: npm start
+    startCommand: node index.js
     envVars:
       - key: NODE_VERSION
-        value: 20.12.2
+        value: 20
+      - key: RENDER_EXTERNAL_URL
+        value: https://whatsapp-automation-909.onrender.com # Change this to your actual Render URL
       - key: DATA_DIR
-        value: /opt/render/project/src/data
-    disk:
-      name: whatsapp-sessions
-      mountPath: /opt/render/project/src/data
-      sizeGB: 1
+        value: ./data
+      - key: ADMIN_EMAIL
+        value: admin@example.com # 🛡️ Change this to your permanent login email
+      - key: ADMIN_PASS
+        value: admin123 # 🛡️ Change this to your permanent login password
+    # ℹ️ Render Free Tier deletes files on restart. 
+    # Setting the above ADMIN variables creates a 'Master Account' that never disappears!

@@ -1,534 +1,1122 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WhatsApp Agent | Premium Automation Suite</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
-    <style>
-        :root {
-            --bg-deep: #08101e;
-            --bg-card: rgba(16, 24, 39, 0.7);
-            --accent-primary: #3b82f6;
-            --accent-secondary: #8b5cf6;
-            --text-main: #f3f4f6;
-            --text-dim: #9ca3af;
-            --success: #10b981;
-            --danger: #ef4444;
-            --warning: #f59e0b;
-            --glass-border: rgba(255, 255, 255, 0.1);
-            --glass-gradient: linear-gradient(135deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
-        }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WA Bulk Sender</title>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.29/jspdf.plugin.autotable.min.js"></script>
+<!-- Login page styles -->
+<style>
+#loginPage{display:flex;align-items:center;justify-content:center;min-height:100vh;background:#08101e}
+.login-card{background:#0e1a2e;border:1px solid #1e3050;border-radius:24px;padding:36px;width:100%;max-width:380px;text-align:center;box-shadow:0 25px 60px rgba(0,0,0,.6)}
+.login-card .icon{font-size:3em;color:#25D366;margin-bottom:12px;filter:drop-shadow(0 0 20px rgba(37,211,102,.4))}
+.login-card h2{font-size:1.5em;font-weight:800;margin-bottom:4px}
+.login-card .sub{color:#64748b;font-size:.85em;margin-bottom:20px}
+.auth-tabs{display:flex;border-radius:12px;background:#111f35;padding:4px;margin-bottom:20px;gap:4px}
+.auth-tab{flex:1;padding:10px;border:none;background:transparent;color:#64748b;font-family:inherit;font-size:.9em;font-weight:600;border-radius:9px;cursor:pointer;transition:.2s}
+.auth-tab.active{background:#0e1a2e;color:#25D366;box-shadow:0 2px 8px rgba(0,0,0,.3)}
+.auth-form{display:none;flex-direction:column;gap:12px}
+.auth-form.active{display:flex}
+.auth-input{background:#111f35;border:1px solid #1e3050;border-radius:12px;color:#e2e8f0;padding:13px 16px;font-family:inherit;font-size:.95em;outline:none;transition:.2s;text-align:left;width:100%;box-sizing:border-box}
+.auth-input:focus{border-color:#25D366}
+.login-btn{background:linear-gradient(135deg,#25D366,#128C7E);color:#fff;border:none;border-radius:12px;padding:14px;font-size:1em;font-weight:700;cursor:pointer;font-family:inherit;transition:.2s;width:100%}
+.login-btn:hover{opacity:.9}
+.auth-err{color:#ef4444;font-size:.82em;display:none;text-align:left;background:rgba(239,68,68,.08);padding:8px 12px;border-radius:8px}
+</style>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Plus Jakarta Sans',sans-serif;background:#08101e;color:#e2e8f0;min-height:100vh}
+:root{--green:#25D366;--green2:#128C7E;--dark:#08101e;--card:#0e1a2e;--card2:#111f35;--border:#1e3050;--text:#e2e8f0;--sub:#64748b;--red:#ef4444;--yellow:#f59e0b}
 
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-            font-family: 'Plus Jakarta Sans', sans-serif;
-        }
+/* ── QR PAGE ── */
+#qrPage{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:20px;gap:24px}
+.qr-logo{font-size:2.8em;color:var(--green);filter:drop-shadow(0 0 20px rgba(37,211,102,0.4))}
+.qr-card{background:var(--card);border:1px solid var(--border);border-radius:24px;padding:36px;text-align:center;max-width:380px;width:100%;box-shadow:0 25px 50px rgba(0,0,0,0.5)}
+.qr-card h1{font-size:1.5em;font-weight:800;margin-bottom:6px}
+.qr-card .sub{color:var(--sub);font-size:.9em;margin-bottom:24px}
+#qrBox{width:240px;height:240px;background:#fff;border-radius:16px;margin:0 auto 20px;display:flex;align-items:center;justify-content:center;overflow:hidden;box-shadow:0 8px 25px rgba(0,0,0,0.4)}
+#qrBox img{width:100%;height:100%;object-fit:contain}
+.spin-wrap{display:flex;flex-direction:column;align-items:center;gap:10px;color:var(--sub);font-size:.85em}
+.spinner{width:40px;height:40px;border:3px solid #1e3050;border-top-color:var(--green);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.badge{display:inline-flex;align-items:center;gap:7px;padding:7px 16px;border-radius:50px;font-size:.82em;font-weight:700;margin-bottom:18px}
+.badge.waiting{background:rgba(37,211,102,.1);border:1px solid rgba(37,211,102,.3);color:var(--green)}
+.badge.connected{background:rgba(37,211,102,.15);border:1px solid var(--green);color:var(--green)}
+.badge.disconnected{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);color:var(--red)}
+.pulse{width:8px;height:8px;border-radius:50%;background:currentColor;animation:p 1.2s ease infinite}
+@keyframes p{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(1.5)}}
+.steps{text-align:left;background:rgba(255,255,255,.03);border-radius:12px;padding:14px 18px;margin-top:4px}
+.steps p{font-size:.82em;color:var(--sub);margin-bottom:6px}
+.steps p:last-child{margin:0}
+.steps span{color:var(--green);font-weight:700;margin-right:6px}
+.btn-reset{margin-top:14px;background:transparent;border:1px solid var(--border);color:var(--sub);padding:9px 20px;border-radius:10px;cursor:pointer;font-size:.82em;font-family:inherit;transition:.2s}
+.btn-reset:hover{border-color:var(--sub);color:var(--text)}
+.success-anim{display:none;flex-direction:column;align-items:center;gap:14px}
+.success-circle{width:80px;height:80px;background:linear-gradient(135deg,var(--green),var(--green2));border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:2em;box-shadow:0 0 0 16px rgba(37,211,102,.1);animation:popIn .4s cubic-bezier(.175,.885,.32,1.275)}
+@keyframes popIn{from{transform:scale(0)}to{transform:scale(1)}}
 
-        body {
-            background: var(--bg-deep);
-            color: var(--text-main);
-            overflow-x: hidden;
-            min-height: 100vh;
-        }
 
-        /* --- Animations --- */
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        @keyframes slideIn { from { transform: translateX(-20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
-        @keyframes pulse { 0% { opacity: 0.5; } 50% { opacity: 1; } 100% { opacity: 0.5; } }
+/* ── AUTH PAGE ── */
+#loginPage{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}
+.login-card{background:var(--card);border:1px solid var(--border);border-radius:24px;padding:40px;width:100%;max-width:400px;text-align:center;box-shadow:0 25px 50px rgba(0,0,0,0.5)}
+.login-card .icon{font-size:2.5em;color:var(--green);margin-bottom:15px}
+.login-card h2{margin-bottom:5px;font-weight:800}
+.login-card .sub{color:var(--sub);font-size:.9em;margin-bottom:30px}
+.auth-tabs{display:flex;background:var(--card2);border-radius:12px;padding:4px;margin-bottom:25px}
+.auth-tab{flex:1;padding:10px;border:none;background:transparent;color:var(--sub);font-weight:700;font-size:.85em;cursor:pointer;border-radius:10px;transition:.2s}
+.auth-tab.active{background:var(--card);color:var(--green);box-shadow:0 4px 12px rgba(0,0,0,0.2)}
+.auth-form{display:none;flex-direction:column;gap:15px}
+.auth-form.active{display:flex}
+.auth-input{background:var(--card2);border:1px solid var(--border);border-radius:12px;color:var(--text);padding:14px;font-family:inherit;font-size:.92em;outline:none;transition:.2s}
+.auth-input:focus{border-color:var(--green);box-shadow:0 0 0 4px rgba(37,211,102,0.1)}
+.auth-err{color:var(--red);font-size:.8em;font-weight:600;display:none}
+.login-btn{background:linear-gradient(135deg,var(--green),var(--green2));color:#fff;border:none;border-radius:12px;padding:14px;font-weight:700;font-family:inherit;cursor:pointer;transition:.2s;box-shadow:0 8px 20px rgba(37,211,102,0.25)}
+.login-btn:hover{transform:translateY(-1px);opacity:.95}
 
-        /* --- Layout --- */
-        .app-container {
-            display: flex;
-            height: 100vh;
-            display: none; /* Hidden until auth */
-        }
+/* ── DASHBOARD ── */
+#dashPage{display:none;flex-direction:column;min-height:100vh}
+.topbar{background:var(--card);border-bottom:1px solid var(--border);padding:14px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100}
+.topbar .logo{font-size:1.2em;font-weight:800;color:var(--green);display:flex;align-items:center}
+.topbar .logo span{color:var(--text)}
 
-        .auth-container {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            height: 100vh;
-            background: radial-gradient(circle at top right, #1e293b, #08101e);
-        }
+.dash-section{display:none;padding:24px;gap:24px;flex:1}
+.dash-section.active{display:grid;grid-template-columns:1fr 1fr}
+@media(max-width:900px){.dash-section.active{grid-template-columns:1fr}}
 
-        /* --- Glassmorphism Components --- */
-        .glass-card {
-            background: var(--bg-card);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
-            border: 1px solid var(--glass-border);
-            border-radius: 20px;
-            padding: 2rem;
-            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
-        }
+/* Stats row */
+.stats-row{grid-column:1/-1;display:grid;grid-template-columns:repeat(5,1fr);gap:14px}
+@media(max-width:900px){.stats-row{grid-template-columns:repeat(3,1fr)}}
+.stat-card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:18px;text-align:center}
+.stat-card .val{font-size:2em;font-weight:800;line-height:1}
+.stat-card .lbl{font-size:.75em;color:var(--sub);margin-top:5px;font-weight:600;text-transform:uppercase;letter-spacing:.5px}
+.stat-card.green .val{color:var(--green)}
+.stat-card.red .val{color:var(--red)}
+.stat-card.yellow .val{color:var(--yellow)}
 
-        .sidebar {
-            width: 280px;
-            background: rgba(8, 16, 30, 0.8);
-            backdrop-filter: blur(20px);
-            border-right: 1px solid var(--glass-border);
-            padding: 2rem 1.5rem;
-            display: flex;
-            flex-direction: column;
-        }
+/* Panels */
+.panel{background:var(--card);border:1px solid var(--border);border-radius:20px;padding:24px;display:flex;flex-direction:column;gap:16px}
+.panel h3{font-size:1em;font-weight:700;color:var(--text)}
+.panel h3 i{color:var(--green);margin-right:8px}
 
-        .main-content {
-            flex: 1;
-            padding: 2rem;
-            overflow-y: auto;
-            background: radial-gradient(circle at bottom left, #111827, #08101e);
-        }
+/* Upload zone */
+.upload-zone{border:2px dashed var(--border);border-radius:14px;padding:30px;text-align:center;cursor:pointer;transition:.2s;position:relative}
+.upload-zone:hover{border-color:var(--green);background:rgba(37,211,102,.04)}
+.upload-zone input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.upload-zone i{font-size:2em;color:var(--sub);margin-bottom:8px;display:block}
+.upload-zone p{color:var(--sub);font-size:.88em}
+.upload-zone .hl{color:var(--green);font-weight:700}
+#numPreview{background:var(--card2);border:1px solid var(--border);border-radius:12px;padding:12px 16px;font-size:.83em;color:var(--sub);max-height:120px;overflow-y:auto;display:none}
+#numPreview.show{display:block}
 
-        /* --- Sidebar Menu --- */
-        .logo {
-            font-size: 1.5rem;
-            font-weight: 800;
-            background: linear-gradient(to right, #3b82f6, #8b5cf6);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            margin-bottom: 3rem;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
+/* Messages */
+.msg-list{display:flex;flex-direction:column;gap:10px}
+.msg-item{display:flex;gap:8px;align-items:flex-start}
+.msg-item textarea{flex:1;background:var(--card2);border:1px solid var(--border);border-radius:12px;color:var(--text);padding:10px 14px;font-family:inherit;font-size:.85em;resize:vertical;min-height:70px;outline:none;transition:.2s}
+.msg-item textarea:focus{border-color:var(--green)}
+.del-btn{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);color:var(--red);width:32px;height:32px;border-radius:8px;cursor:pointer;font-size:.85em;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.add-msg-btn{background:rgba(37,211,102,.08);border:1px dashed rgba(37,211,102,.3);color:var(--green);padding:10px;border-radius:12px;cursor:pointer;font-size:.85em;font-weight:600;font-family:inherit;transition:.2s}
+.add-msg-btn:hover{background:rgba(37,211,102,.15)}
 
-        .menu-item {
-            padding: 1rem;
-            border-radius: 12px;
-            cursor: pointer;
-            margin-bottom: 0.5rem;
-            transition: all 0.3s ease;
-            display: flex;
-            align-items: center;
-            gap: 1rem;
-            color: var(--text-dim);
-            font-weight: 500;
-        }
+/* Interval */
+.interval-row{display:flex;align-items:center;gap:10px}
+.interval-row label{font-size:.85em;color:var(--sub);white-space:nowrap}
+.interval-row input{background:var(--card2);border:1px solid var(--border);border-radius:10px;color:var(--text);padding:9px 14px;font-family:inherit;font-size:.9em;width:80px;outline:none;text-align:center}
+.interval-row input:focus{border-color:var(--green)}
 
-        .menu-item:hover, .menu-item.active {
-            background: rgba(59, 130, 246, 0.1);
-            color: var(--text-main);
-            border-left: 4px solid var(--accent-primary);
-        }
+/* Toggle Switch */
+.switch-row{display:flex;align-items:center;justify-content:space-between;background:rgba(255,255,255,.03);padding:12px 16px;border-radius:12px;margin-top:10px}
+.switch{position:relative;display:inline-block;width:44px;height:22px}
+.switch input{opacity:0;width:0;height:0}
+.slider{position:absolute;cursor:pointer;inset:0;background-color:#1e3050;transition:.4s;border-radius:34px}
+.slider:before{position:absolute;content:"";height:16px;width:16px;left:3px;bottom:3px;background-color:var(--sub);transition:.4s;border-radius:50%}
+input:checked + .slider{background-color:var(--green)}
+input:checked + .slider:before{transform:translateX(22px);background-color:#fff}
+.reply-area{width:100%;background:var(--card2);border:1px solid var(--border);border-radius:10px;color:var(--text);padding:10px;font-family:inherit;font-size:.82em;resize:vertical;min-height:60px;margin-top:8px;outline:none;display:none}
+.reply-area.show{display:block}
+.keyword-list{display:none;flex-direction:column;gap:8px;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)}
+.keyword-list.show{display:flex}
+.key-row{display:flex;gap:8px;align-items:center;background:rgba(255,255,255,.02);padding:8px;border-radius:10px;border:1px solid var(--border)}
+.key-row input{flex:1;background:var(--card2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:6px 10px;font-size:.82em;outline:none}
+.key-row input:focus{border-color:var(--green)}
+.key-add-btn{background:rgba(37,211,102,.1);border:1px dashed var(--green);color:var(--green);padding:8px;border-radius:10px;cursor:pointer;font-size:.82em;font-weight:600;text-align:center;transition:.2s}
+.key-add-btn:hover{background:rgba(37,211,102,.18)}
 
-        /* --- Auth Form --- */
-        .auth-card {
-            width: 400px;
-            text-align: center;
-            animation: fadeIn 0.6s ease-out;
-        }
+/* Buttons */
+.btn-start{background:linear-gradient(135deg,var(--green),var(--green2));color:#fff;border:none;border-radius:14px;padding:15px;font-size:1em;font-weight:700;cursor:pointer;font-family:inherit;width:100%;transition:.2s;box-shadow:0 8px 20px rgba(37,211,102,.3)}
+.btn-start:hover{opacity:.9;transform:translateY(-1px)}
+.btn-start:disabled{background:#1e3050;color:var(--sub);cursor:not-allowed;box-shadow:none;transform:none}
+.btn-stop{background:rgba(239,68,68,.15);color:var(--red);border:1px solid rgba(239,68,68,.3);border-radius:14px;padding:13px;font-size:.95em;font-weight:700;cursor:pointer;font-family:inherit;width:100%;transition:.2s;display:none}
+.btn-stop:hover{background:rgba(239,68,68,.25)}
 
-        .auth-card h2 { font-size: 2rem; margin-bottom: 0.5rem; }
-        .auth-card p { color: var(--text-dim); margin-bottom: 2rem; }
+/* Progress bar */
+.prog-wrap{background:var(--card2);border-radius:50px;height:8px;overflow:hidden}
+.prog-bar{height:100%;background:linear-gradient(90deg,var(--green),var(--green2));border-radius:50px;transition:width .4s;width:0%}
 
-        input {
-            width: 100%;
-            padding: 0.8rem 1rem;
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid var(--glass-border);
-            border-radius: 10px;
-            color: white;
-            margin-bottom: 1rem;
-            outline: none;
-            transition: border-color 0.3s;
-        }
+/* Log */
+#logBox{background:var(--card2);border:1px solid var(--border);border-radius:14px;padding:14px;height:280px;overflow-y:auto;font-size:.8em;font-family:'Courier New',monospace;display:flex;flex-direction:column;gap:4px}
+.log-line{padding:3px 0;border-bottom:1px solid rgba(255,255,255,.04)}
+.log-line.ok{color:#4ade80}.log-line.err{color:#f87171}.log-line.info{color:#94a3b8}.log-line.warn{color:#fbbf24}
+/* Input method tabs */
+.inp-tabs{display:flex;border-radius:10px;background:#0b1526;padding:3px;gap:3px;margin-bottom:12px}
+.inp-tab{flex:1;padding:8px 12px;border:none;background:transparent;color:#64748b;font-family:inherit;font-size:.82em;font-weight:600;border-radius:8px;cursor:pointer;transition:.2s}
+.inp-tab.active{background:#0e1a2e;color:#25D366;box-shadow:0 2px 6px rgba(0,0,0,.3)}
+.inp-panel{display:none}.inp-panel.active{display:block}
+.paste-area{width:100%;background:#0b1526;border:1px solid var(--border);border-radius:12px;color:#e2e8f0;padding:13px;font-family:'Courier New',monospace;font-size:.82em;resize:vertical;min-height:110px;outline:none;transition:.2s;box-sizing:border-box;line-height:1.6}
+.paste-area:focus{border-color:var(--green)}
+.parse-btn{margin-top:8px;background:rgba(37,211,102,.1);border:1px solid rgba(37,211,102,.25);color:var(--green);padding:9px 18px;border-radius:10px;cursor:pointer;font-family:inherit;font-size:.83em;font-weight:700;transition:.2s}
+.parse-btn:hover{background:rgba(37,211,102,.2)}
+/* Topbar nav tabs */
+.dash-nav{display:flex;gap:6px}
+.dash-nav-btn{background:transparent;border:1px solid var(--border);color:var(--sub);padding:7px 16px;border-radius:10px;cursor:pointer;font-family:inherit;font-size:.85em;font-weight:600;transition:.2s}
+.dash-nav-btn.active{background:rgba(37,211,102,.12);border-color:var(--green);color:var(--green)}
+.dash-nav-btn:hover:not(.active){border-color:#334155;color:var(--text)}
+/* History table */
+#histPage{display:none;flex-direction:column;padding:24px;gap:20px;flex:1}
+#histPage.active{display:flex}
+.tbl-wrap{background:var(--card);border:1px solid var(--border);border-radius:18px;overflow:auto;max-height:500px}
+table{width:100%;border-collapse:collapse;font-size:.88em}
+thead th{background:#0b1526;padding:13px 16px;text-align:left;color:var(--sub);font-weight:700;font-size:.8em;text-transform:uppercase;letter-spacing:.5px;position:sticky;top:0;white-space:nowrap}
+tbody td{padding:12px 16px;border-bottom:1px solid rgba(255,255,255,.05);vertical-align:top;word-break:break-word}
+tbody tr:last-child td{border-bottom:none}
+tbody tr:hover{background:rgba(255,255,255,.03)}
+.badge-sent{background:rgba(37,211,102,.12);color:#4ade80;padding:3px 10px;border-radius:20px;font-size:.8em;font-weight:700}
+.badge-fail{background:rgba(239,68,68,.12);color:#f87171;padding:3px 10px;border-radius:20px;font-size:.8em;font-weight:700}
+.export-row{display:flex;gap:10px;flex-wrap:wrap}
+.exp-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:10px;border:none;cursor:pointer;font-family:inherit;font-size:.88em;font-weight:700;transition:.2s}
+.exp-pdf{background:rgba(239,68,68,.15);color:#f87171;border:1px solid rgba(239,68,68,.25)}
+.exp-pdf:hover{background:rgba(239,68,68,.25)}
+.exp-xls{background:rgba(37,211,102,.12);color:#4ade80;border:1px solid rgba(37,211,102,.25)}
+.exp-xls:hover{background:rgba(37,211,102,.22)}
+.logout-btn{background:transparent;border:1px solid var(--border);color:var(--sub);padding:7px 14px;border-radius:10px;cursor:pointer;font-family:inherit;font-size:.82em}
+.logout-btn:hover{border-color:var(--red);color:var(--red)}
+/* Filter Bar */
+.filter-bar{display:flex;gap:12px;margin:20px 0;background:rgba(255,255,255,.03);padding:15px;border-radius:14px;border:1px solid var(--border);flex-wrap:wrap;align-items:center}
+.filter-inp{flex:1;background:var(--card2);border:1px solid var(--border);border-radius:10px;color:var(--text);padding:10px 14px;font-family:inherit;font-size:.85em;outline:none;min-width:180px}
+.filter-inp:focus{border-color:var(--green)}
+.filter-sel{background:var(--card2);border:1px solid var(--border);color:var(--text);padding:9px 12px;border-radius:10px;font-family:inherit;font-size:.85em;outline:none}
+.filter-check{display:flex;align-items:center;gap:8px;font-size:.82em;color:var(--sub);cursor:pointer;user-select:none}
+/* Interactive table elements */
+.copyable{cursor:pointer;position:relative;display:inline-flex;align-items:center;gap:6px;transition:.2s}
+.copyable:hover{color:var(--green)}
+.copyable:after{content:'\f0c5';font-family:'Font Awesome 5 Free';font-weight:400;font-size:.8em;opacity:0;transition:.2s}
+.copyable:hover:after{opacity:.5}
+.dot-sent{width:8px;height:8px;border-radius:50%;background:var(--green);display:inline-block;margin-right:6px;box-shadow:0 0 6px var(--green)}
+.dot-fail{width:8px;height:8px;border-radius:50%;background:var(--red);display:inline-block;margin-right:6px;box-shadow:0 0 6px var(--red)}
+.dot-in{width:8px;height:8px;border-radius:50%;background:#3b82f6;display:inline-block;margin-right:6px;box-shadow:0 0 6px #3b82f6}
+.act-btn{background:transparent;border:1px solid var(--border);color:var(--sub);padding:5px 8px;border-radius:6px;cursor:pointer;font-size:.8em;transition:.2s}
+.act-btn:hover{border-color:var(--green);color:var(--green)}
+.act-btn.del:hover{border-color:var(--red);color:var(--red)}
 
-        input:focus { border-color: var(--accent-primary); }
+/* Modal */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);backdrop-filter:blur(5px);z-index:3000;align-items:center;justify-content:center;padding:20px}
+.modal-overlay.show{display:flex}
+.modal-card{background:var(--card);border:1px solid var(--border);border-radius:24px;width:100%;max-width:400px;padding:28px;box-shadow:0 30px 60px rgba(0,0,0,.6);animation:popIn .3s cubic-bezier(.175,.885,.32,1.275)}
+.modal-card h3{margin-bottom:12px;font-size:1.2em}
+.modal-input{width:100%;background:var(--card2);border:1px solid var(--border);border-radius:12px;color:var(--text);padding:14px;margin-bottom:18px;font-family:inherit;font-size:.9em;outline:none;resize:none;min-height:100px}
+.modal-input:focus{border-color:var(--green)}
+.modal-btns{display:flex;gap:12px}
+.modal-btn{flex:1;padding:12px;border-radius:12px;border:none;cursor:pointer;font-family:inherit;font-weight:700;transition:.2s}
+.modal-btn.primary{background:var(--green);color:#fff}
+.modal-btn.sec{background:#1e3050;color:var(--sub)}
+.modal-btn:hover{opacity:.9;transform:translateY(-1px)}
+/* Resume banner */
+.resume-banner{display:none;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:14px;padding:14px 18px;gap:12px;align-items:center;flex-wrap:wrap}
+.resume-banner.show{display:flex}
+.resume-banner p{flex:1;font-size:.88em;color:var(--yellow);font-weight:600;min-width:180px}
+.btn-resume{background:rgba(245,158,11,.15);color:var(--yellow);border:1px solid rgba(245,158,11,.35);border-radius:12px;padding:11px 20px;font-size:.9em;font-weight:700;cursor:pointer;font-family:inherit;transition:.2s}
+.btn-resume:hover{background:rgba(245,158,11,.28)}
 
-        .btn {
-            width: 100%;
-            padding: 0.8rem;
-            border-radius: 10px;
-            border: none;
-            cursor: pointer;
-            font-weight: 600;
-            transition: all 0.3s;
-            margin-top: 1rem;
-        }
+/* Toast Notification */
+#toast{position:fixed;bottom:30px;left:50%;transform:translateX(-50%) translateY(100px);background:var(--card);border:1px solid var(--green);color:#fff;padding:16px 28px;border-radius:16px;box-shadow:0 15px 40px rgba(0,0,0,0.6);z-index:2000;display:flex;align-items:center;gap:12px;transition:.4s cubic-bezier(.175,.885,.32,1.275);opacity:0}
+#toast.show{transform:translateX(-50%) translateY(0);opacity:1}
+#toast i{color:var(--green);font-size:1.4em}
 
-        .btn-primary { background: linear-gradient(to right, #3b82f6, #8b5cf6); color: white; }
-        .btn-primary:hover { opacity: 0.9; transform: translateY(-2px); }
+@media(max-width:600px){
+  .topbar{padding:12px 16px}
+  .dash-section{padding:16px;gap:16px}
+  #histPage{padding:16px}
+  .stats-row{grid-template-columns:repeat(2,1fr)}
+  .stat-card{padding:14px}
+  .stat-card .val{font-size:1.6em}
+}
 
-        /* --- Dashboard Stats --- */
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 1.5rem;
-            margin-bottom: 2rem;
-        }
-
-        .stat-card {
-            padding: 1.5rem;
-            border-radius: 15px;
-            background: var(--glass-gradient);
-            border: 1px solid var(--glass-border);
-            animation: fadeIn 0.8s ease-out;
-        }
-
-        .stat-card .label { color: var(--text-dim); font-size: 0.9rem; margin-bottom: 0.5rem; }
-        .stat-card .value { font-size: 1.8rem; font-weight: 700; }
-
-        /* --- Sections --- */
-        .section { display: none; animation: fadeIn 0.4s ease; }
-        .section.active { display: block; }
-
-        /* --- QR Display --- */
-        #qr-container {
-            width: 250px;
-            height: 250px;
-            margin: 2rem auto;
-            background: white;
-            border-radius: 15px;
-            padding: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            position: relative;
-        }
-
-        #qr-container img { width: 100%; height: 100%; }
-        
-        .status-dot {
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            display: inline-block;
-            margin-right: 0.5rem;
-        }
-        .status-online { background: var(--success); box-shadow: 0 0 10px var(--success); }
-        .status-offline { background: var(--danger); }
-
-        /* --- Mobile Responsive --- */
-        @media (max-width: 768px) {
-            .sidebar { display: none; }
-            .app-container { flex-direction: column; }
-            .main-content { padding: 1rem; }
-            .auth-card { width: 90%; }
-        }
-    </style>
+/* Chat Modal & Bubbles */
+.chat-window{display:flex;flex-direction:column;height:550px;max-height:80vh}
+.chat-msgs{flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:8px;background:#0b141a url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png');background-blend-mode:overlay;border-radius:12px;margin-bottom:15px;scroll-behavior:smooth}
+.bubble-wrap{display:flex;width:100%;margin-bottom:2px}
+.bubble-wrap.sent{justify-content:flex-end}
+.bubble-wrap.received{justify-content:flex-start}
+.bubble{max-width:85%;padding:8px 12px;font-size:.92em;line-height:1.45;position:relative;word-wrap:break-word;box-shadow:0 1px .5px rgba(0,0,0,.13);z-index:1}
+.bubble.sent{background:#005c4b;color:#e9edef;border-radius:8px 8px 0 8px}
+.bubble.received{background:#202c33;color:#e9edef;border-radius:8px 8px 8px 0;border:none}
+.bubble:after{content:'';position:absolute;bottom:0;width:0;height:0;border:8px solid transparent;z-index:-1}
+.sent .bubble:after{right:-8px;border-left-color:#005c4b;border-bottom-color:#005c4b}
+.received .bubble:after{left:-8px;border-right-color:#202c33;border-bottom-color:#202c33}
+.emoji-panel{position:absolute;bottom:70px;left:20px;background:#233138;border-radius:12px;padding:10px;display:none;grid-template-columns:repeat(6,1fr);gap:5px;box-shadow:0 10px 30px rgba(0,0,0,0.5);z-index:1000}
+.emoji-panel.show{display:grid}
+.emoji-item{cursor:pointer;font-size:1.4em;padding:5px;transition:.2s}
+.emoji-item:hover{background:rgba(255,255,255,.05);border-radius:8px}
+.bubble-meta{display:flex;align-items:center;justify-content:flex-end;gap:4px;font-size:.65em;opacity:.6;margin-top:2px}
+.bubble-meta i{font-size:1.1em;color:#53bdeb}
+.chat-footer{display:flex;gap:12px;padding:10px;background:var(--card);border-radius:14px}
+.chat-input{flex:1;background:#2a3942;border:none;border-radius:20px;color:#fff;padding:12px 18px;font-family:inherit;outline:none;font-size:.95em}
+.chat-send{background:var(--green);color:#fff;border:none;width:45px;height:45px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:1.2em;box-shadow:0 2px 5px rgba(0,0,0,.3)}
+</style>
 </head>
 <body>
+<audio id="successSound" src="https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3"></audio>
+<div id="toast"><i class="fas fa-check-circle"></i><span id="toastMsg">Campaign Completed!</span></div>
 
-    <!-- Authentication -->
-    <div class="auth-container" id="auth-view">
-        <div class="glass-card auth-card">
-            <div class="logo">WA AGENT<span>⚡</span></div>
-            <h2 id="auth-title">Welcome Back</h2>
-            <p id="auth-desc">Please enter your credentials to login.</p>
-            
-            <input type="text" id="username" placeholder="Username">
-            <input type="password" id="password" placeholder="Password">
-            
-            <button class="btn btn-primary" onclick="handleAuth()" id="auth-btn">Sign In</button>
-            <p style="margin-top: 1rem; font-size: 0.8rem; cursor: pointer; color: var(--accent-primary);" onclick="toggleAuthMode()" id="auth-toggle">Need an account? Sign Up</p>
+<div class="modal-overlay" id="chatModal">
+  <div class="modal-card" style="max-width:600px;padding:0;overflow:hidden;border:none">
+    <div style="background:#202c33;padding:12px 20px;display:flex;justify-content:space-between;align-items:center">
+      <div style="display:flex;align-items:center;gap:12px">
+        <div style="width:40px;height:40px;border-radius:50%;background:#64748b;display:flex;align-items:center;justify-content:center;font-size:1.2em"><i class="fas fa-user"></i></div>
+        <div>
+          <div id="chatTarget" style="font-weight:700;font-size:1em"></div>
+          <div style="font-size:.7em;color:var(--green)"><i class="fas fa-circle" style="font-size:.6em;margin-right:4px"></i>Live Chatting</div>
         </div>
+      </div>
+      <button onclick="closeChat()" style="background:transparent;border:none;color:var(--sub);cursor:pointer;font-size:1.2em;padding:8px"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="chat-window" style="padding:10px;position:relative">
+      <div class="emoji-panel" id="emojiPanel">
+        <span class="emoji-item" onclick="addEmoji('😊')">😊</span>
+        <span class="emoji-item" onclick="addEmoji('👋')">👋</span>
+        <span class="emoji-item" onclick="addEmoji('👍')">👍</span>
+        <span class="emoji-item" onclick="addEmoji('❤️')">❤️</span>
+        <span class="emoji-item" onclick="addEmoji('😂')">😂</span>
+        <span class="emoji-item" onclick="addEmoji('🔥')">🔥</span>
+        <span class="emoji-item" onclick="addEmoji('🙏')">🙏</span>
+        <span class="emoji-item" onclick="addEmoji('✨')">✨</span>
+        <span class="emoji-item" onclick="addEmoji('📦')">📦</span>
+        <span class="emoji-item" onclick="addEmoji('💰')">💰</span>
+        <span class="emoji-item" onclick="addEmoji('📍')">📍</span>
+        <span class="emoji-item" onclick="addEmoji('📞')">📞</span>
+      </div>
+      <div class="chat-msgs" id="chatContainer"></div>
+      <div class="chat-footer">
+        <button onclick="toggleEmoji()" style="background:transparent;border:none;color:var(--sub);font-size:1.3em;cursor:pointer"><i class="far fa-smile"></i></button>
+        <button onclick="addTemplate()" style="background:transparent;border:none;color:var(--sub);font-size:1.3em;cursor:pointer"><i class="fas fa-plus"></i></button>
+        <input type="text" id="chatInput" class="chat-input" placeholder="Type a message..." onkeyup="if(event.key==='Enter') sendChat()">
+        <button class="chat-send" onclick="sendChat()"><i class="fas fa-paper-plane"></i></button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ LOGIN PAGE ═══════════════════════════════════════════════════════════ -->
+<div id="loginPage">
+  <div class="login-card">
+    <div class="icon"><i class="fab fa-whatsapp"></i></div>
+    <h2>WA Bulk Sender</h2>
+    <p class="sub">WhatsApp bulk messaging platform</p>
+    <div class="auth-tabs">
+      <button class="auth-tab active" onclick="switchTab('login')">Login</button>
+      <button class="auth-tab" onclick="switchTab('signup')">Sign Up</button>
+    </div>
+    <!-- Login form -->
+    <div class="auth-form active" id="loginForm">
+      <input type="email" id="loginEmail" class="auth-input" placeholder="Email address">
+      <input type="password" id="loginPass" class="auth-input" placeholder="Password" onkeydown="if(event.key==='Enter')doLogin()">
+      <div class="auth-err" id="loginErr"></div>
+      <button class="login-btn" onclick="doLogin()"><i class="fas fa-sign-in-alt" style="margin-right:8px"></i>Login</button>
+    </div>
+    <!-- Signup form -->
+    <div class="auth-form" id="signupForm">
+      <input type="text" id="regName" class="auth-input" placeholder="Full name">
+      <input type="email" id="regEmail" class="auth-input" placeholder="Email address">
+      <input type="password" id="regPass" class="auth-input" placeholder="Password (min 6 chars)" onkeydown="if(event.key==='Enter')doRegister()">
+      <div class="auth-err" id="regErr"></div>
+      <button class="login-btn" onclick="doRegister()"><i class="fas fa-user-plus" style="margin-right:8px"></i>Create Account</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ PAGE 1: QR CONNECT ══════════════════════════════════════════════════ -->
+<div id="qrPage">
+  <div class="qr-logo"><i class="fab fa-whatsapp"></i></div>
+  <div class="qr-card">
+    <h1>Connect WhatsApp</h1>
+    <p class="sub">Scan the QR code to activate the bulk sender</p>
+    <div id="qrBox">
+      <div class="spin-wrap" id="spinEl">
+        <div class="spinner"></div>
+        <span>Generating QR...</span>
+      </div>
+    </div>
+    <div class="success-anim" id="successEl">
+      <div class="success-circle">✓</div>
+      <div style="font-weight:800;font-size:1.2em">Connected!</div>
+      <div style="color:var(--sub);font-size:.85em">Opening dashboard...</div>
+    </div>
+    <div class="badge waiting" id="statusBadge">
+      <div class="pulse"></div>
+      <span id="statusTxt">Waiting for QR scan...</span>
+    </div>
+    <div class="steps">
+      <p><span>1.</span>Open WhatsApp on your phone</p>
+      <p><span>2.</span>Tap ⋮ Menu → Linked Devices</p>
+      <p><span>3.</span>Tap "Link a Device" and scan</p>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:14px;width:100%">
+      <button class="btn-reset" style="flex:1" onclick="resetSession()"><i class="fas fa-rotate-right" style="margin-right:6px"></i>Reset QR</button>
+      <button class="btn-reset" style="flex:1" onclick="doLogout()"><i class="fas fa-sign-out-alt" style="margin-right:6px"></i>Logout</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ PAGE 2: DASHBOARD ═══════════════════════════════════════════════════ -->
+<div id="dashPage">
+  <div class="topbar">
+    <div class="logo"><i class="fab fa-whatsapp" style="margin-right:8px"></i><span>WA Bulk Sender</span></div>
+    <div style="display:flex;align-items:center;gap:12px">
+      <div class="dash-nav">
+        <button class="dash-nav-btn active" onclick="showSection('sender')"><i class="fas fa-paper-plane" style="margin-right:5px"></i>Sender</button>
+        <button class="dash-nav-btn" onclick="showSection('history')"><i class="fas fa-history" style="margin-right:5px"></i>History</button>
+      </div>
+      <div id="userNameBadge" style="font-weight:700;color:var(--text);font-size:.92em">👤 User</div>
+      <div style="display:flex;gap:10px">
+        <button class="logout-btn" onclick="resetSession()" style="border-color:rgba(245,158,11,.3);color:var(--yellow)"><i class="fas fa-unlink"></i> Disconnect WA</button>
+        <button class="logout-btn" onclick="doLogout()"><i class="fas fa-sign-out-alt"></i> Logout</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SENDER SECTION -->
+  <div class="dash-section active" id="senderSection">
+
+    <!-- Stats row -->
+    <div class="stats-row">
+      <div class="stat-card"><div class="val" id="s-total">0</div><div class="lbl">Total</div></div>
+      <div class="stat-card green"><div class="val" id="s-sent">0</div><div class="lbl">Sent</div></div>
+      <div class="stat-card red"><div class="val" id="s-fail">0</div><div class="lbl">Failed</div></div>
+      <div class="stat-card yellow"><div class="val" id="s-rem">0</div><div class="lbl">Remaining</div></div>
+      <div class="stat-card"><div class="val" id="s-idx">—</div><div class="lbl">Current #</div></div>
     </div>
 
-    <!-- Main App -->
-    <div class="app-container" id="app-view">
-        <div class="sidebar">
-            <div class="logo">WA AGENT<span>⚡</span></div>
-            <div class="menu-item active" onclick="showSection('dashboard')">🏠 Dashboard</div>
-            <div class="menu-item" onclick="showSection('instances')">📱 WhatsApp Instance</div>
-            <div class="menu-item" onclick="showSection('bulk')">✉️ Bulk Sender</div>
-            <div class="menu-item" onclick="showSection('validator')">✅ Number Filter</div>
-            <div class="menu-item" onclick="showSection('auto-reply')">🤖 Automation</div>
-            <div class="menu-item" onclick="showSection('history')">📊 Reports</div>
-            
-            <div style="margin-top: auto;">
-                <div class="menu-item" onclick="logout()" style="color: var(--danger);">🚪 Logout</div>
-            </div>
+    <!-- LEFT: Upload + Messages -->
+    <div class="panel">
+
+      <!-- Number Input with tabs -->
+      <h3><i class="fas fa-mobile-alt"></i>Phone Numbers</h3>
+      <div class="inp-tabs">
+        <button class="inp-tab active" onclick="switchInp('excel')"><i class="fas fa-file-excel" style="margin-right:5px"></i>Upload Excel</button>
+        <button class="inp-tab" onclick="switchInp('paste')"><i class="fas fa-paste" style="margin-right:5px"></i>Paste Numbers</button>
+      </div>
+      <!-- Excel panel -->
+      <div class="inp-panel active" id="excelPanel">
+        <div class="upload-zone" id="dropZone">
+          <input type="file" id="excelFile" accept=".xlsx,.xls,.csv" onchange="handleExcel(this)">
+          <i class="fas fa-cloud-upload-alt"></i>
+          <p>Drop Excel / CSV here or <span class="hl">click to browse</span></p>
+          <p style="margin-top:5px;font-size:.78em">Any column with 10-digit numbers will be extracted</p>
         </div>
+      </div>
+      <!-- Paste panel -->
+      <div class="inp-panel" id="pastePanel">
+        <textarea id="pasteArea" class="paste-area" placeholder="Paste phone numbers here...
 
-        <div class="main-content">
-            <!-- Dashboard Section -->
-            <div id="dashboard" class="section active">
-                <h1 style="margin-bottom: 2rem;">Overview</h1>
-                <div class="stats-grid">
-                    <div class="stat-card">
-                        <div class="label">Total Sent</div>
-                        <div class="value" id="stat-sent">0</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="label">Active Campaigns</div>
-                        <div class="value" id="stat-active">0</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="label">Blocked (Ban Risk)</div>
-                        <div class="value" id="stat-blocked" style="color: var(--danger);">0</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="label">Instance Status</div>
-                        <div class="value" id="stat-status" style="font-size: 1.2rem;">Disconnected</div>
-                    </div>
-                </div>
+Formats accepted:
+9876543210
++91 98765 43210
+91-9876543210
+9876543210, 9123456789
+(One per line or comma separated)"></textarea>
+        <button class="parse-btn" onclick="parsePasted()"><i class="fas fa-check-circle" style="margin-right:6px"></i>Parse & Use These Numbers</button>
+      </div>
+      <div id="numPreview"></div>
 
-                <div class="glass-card" style="margin-top: 2rem;">
-                    <h3>Live Activity Log</h3>
-                    <div id="activity-log" style="height: 300px; overflow-y: auto; margin-top: 1rem; font-size: 0.85rem; padding: 1rem; background: rgba(0,0,0,0.2); border-radius: 10px;">
-                        <div style="color: var(--text-dim);">System initialized...</div>
-                    </div>
-                </div>
-            </div>
+      <!-- Messages -->
+      <h3 style="margin-top:8px"><i class="fas fa-comment-dots"></i>Message Templates</h3>
+      <p style="font-size:.8em;color:var(--sub)">Add messages below. One random message is picked for each number.</p>
+      <div class="msg-list" id="msgList"></div>
+      <button class="add-msg-btn" onclick="addMsg()"><i class="fas fa-plus" style="margin-right:6px"></i>Add Message</button>
 
-            <!-- Instances Section -->
-            <div id="instances" class="section">
-                <h1>WhatsApp Instance</h1>
-                <p style="color: var(--text-dim); margin-bottom: 2rem;">Link your account via QR code to start automating.</p>
-                
-                <div class="glass-card" style="max-width: 500px; margin: 0 auto; text-align: center;">
-                    <div id="qr-container">
-                        <div id="qr-placeholder">Initializing...</div>
-                    </div>
-                    <h3 id="instance-status-text">Status: Disconnected</h3>
-                    <p id="instance-id-text" style="font-size: 0.8rem; color: var(--text-dim); margin-top: 0.5rem;"></p>
-                    
-                    <div style="display: flex; gap: 1rem; margin-top: 2rem;">
-                        <button class="btn btn-primary" onclick="initWhatsApp()">Link Account</button>
-                        <button class="btn" style="background: var(--danger); color: white;" onclick="logoutWhatsApp()">Logout Device</button>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Bulk Sender Section -->
-            <div id="bulk" class="section">
-                <h1>Bulk Messaging</h1>
-                <div class="glass-card" style="margin-top: 2rem;">
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">
-                        <div>
-                            <label class="label">Campaign Name</label>
-                            <input type="text" id="campaign-name" placeholder="e.g. Summer Sale 2026">
-                            
-                            <label class="label">Contacts (Paste or Upload Excel)</label>
-                            <textarea id="contacts-paste" style="width: 100%; height: 150px; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); border-radius: 10px; color: white; padding: 1rem; margin-bottom: 1rem;" placeholder="Enter numbers separated by newline..."></textarea>
-                            <input type="file" id="excel-upload" accept=".xlsx, .csv">
-                        </div>
-                        <div>
-                            <label class="label">Message Content</label>
-                            <textarea id="message-text" style="width: 100%; height: 200px; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); border-radius: 10px; color: white; padding: 1rem; margin-bottom: 1rem;" placeholder="Hello {name}, checkout our latest offer!"></textarea>
-                            
-                            <div style="display: flex; gap: 1rem;">
-                                <div>
-                                    <label class="label">Delay (seconds)</label>
-                                    <input type="number" id="campaign-delay" value="5" min="1">
-                                </div>
-                                <div style="flex: 1;">
-                                    <label class="label">&nbsp;</label>
-                                    <button class="btn btn-primary" onclick="startCampaign()" style="margin-top: 0;">Launch Campaign 🚀</button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Number Filter Section -->
-            <div id="validator" class="section">
-                <h1>Number Filter</h1>
-                <p style="color: var(--text-dim); margin-bottom: 2rem;">Check which numbers are registered on WhatsApp.</p>
-                <div class="glass-card">
-                    <textarea id="validator-input" style="width: 100%; height: 150px; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); border-radius: 10px; color: white; padding: 1rem; margin-bottom: 1rem;" placeholder="Enter numbers (one per line)..."></textarea>
-                    <button class="btn btn-primary" onclick="validateNumbers()">Start Verification</button>
-                    
-                    <div id="validator-results" style="margin-top: 2rem; display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
-                        <!-- Results injected here -->
-                    </div>
-                </div>
-            </div>
-
-            <div id="auto-reply" class="section"><h1>Automation</h1><p>Keyword triggers are active (Check index.js for examples).</p></div>
-            <div id="history" class="section"><h1>Reports</h1><p>Full campaign logs are stored in data/history.</p></div>
-        </div>
     </div>
 
-    <script>
-        const socket = io();
-        let currentUser = null;
-        let isRegisterMode = false;
+    <!-- RIGHT: Controls + Log -->
+    <div class="panel">
 
-        // --- Navigation ---
-        function showSection(id) {
-            document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
-            document.querySelectorAll('.menu-item').forEach(m => m.classList.remove('active'));
-            document.getElementById(id).classList.add('active');
-            event.currentTarget.classList.add('active');
-        }
+      <!-- Interval -->
+      <h3><i class="fas fa-clock"></i>Campaign Settings</h3>
+      <div class="interval-row">
+        <label>Delay between messages:</label>
+        <input type="number" id="intervalMin" value="10" min="1" max="60">
+        <span style="font-size:.85em;color:var(--sub)">minutes</span>
+      </div>
 
-        // --- Auth ---
-        async function handleAuth() {
-            const username = document.getElementById('username').value;
-            const password = document.getElementById('password').value;
-            const endpoint = isRegisterMode ? '/api/auth/register' : '/api/auth/login';
+      <!-- Auto Reply -->
+      <div class="switch-row">
+        <label style="font-size:.85em;font-weight:600"><i class="fas fa-reply" style="margin-right:6px"></i>Auto Reply to Inbound</label>
+        <label class="switch">
+          <input type="checkbox" id="autoReplyCheck" onchange="handleToggleReply(this)">
+          <span class="slider"></span>
+        </label>
+      </div>
+      <textarea id="autoReplyText" class="reply-area" placeholder="Default reply for any other message..."></textarea>
+      
+      <div id="keywordSection" class="keyword-list">
+        <div style="font-size:.78em;color:var(--sub);font-weight:600;margin-bottom:4px">Custom Keyword Replies:</div>
+        <div id="keyList"></div>
+        <button class="key-add-btn" onclick="addKeyRow()"><i class="fas fa-plus"></i> Add Keyword Trigger</button>
+      </div>
 
-            try {
-                const res = await fetch(endpoint, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username, password })
-                });
-                const data = await res.json();
+      <!-- Progress -->
+      <div>
+        <div style="display:flex;justify-content:space-between;font-size:.8em;color:var(--sub);margin-bottom:6px">
+          <span>Progress</span><span id="progTxt">0 / 0</span>
+        </div>
+        <div class="prog-wrap"><div class="prog-bar" id="progBar"></div></div>
+      </div>
 
-                if (data.error) return alert(data.error);
+      <!-- Buttons -->
+      <!-- Resume banner (shows when there are pending unsent numbers) -->
+      <div class="resume-banner" id="resumeBanner">
+        <p><i class="fas fa-clock" style="margin-right:6px"></i><span id="resumeTxt">You have unsent numbers from last session.</span></p>
+        <button class="btn-resume" onclick="resumeCampaign()"><i class="fas fa-play" style="margin-right:6px"></i>Resume Campaign</button>
+      </div>
+      <button class="btn-start" id="startBtn" onclick="startCampaign()">
+        <i class="fas fa-paper-plane" style="margin-right:8px"></i>Start New Campaign
+      </button>
+      <button class="btn-stop" id="stopBtn" onclick="stopCampaign()">
+        <i class="fas fa-stop" style="margin-right:8px"></i>Stop Campaign
+      </button>
 
-                if (isRegisterMode) {
-                    alert('Registration successful! Please login.');
-                    toggleAuthMode();
-                } else {
-                    currentUser = data.user;
-                    localStorage.setItem('wa_token', data.token);
-                    localStorage.setItem('wa_user', JSON.stringify(data.user));
-                    initApp();
-                }
-            } catch (err) {
-                alert('Connection failed');
-            }
-        }
+      <!-- Activity Log -->
+      <h3 style="margin-top:4px"><i class="fas fa-terminal"></i>Activity Log</h3>
+      <div id="logBox"><div class="log-line info">Campaign log will appear here...</div></div>
+      <button onclick="document.getElementById('logBox').innerHTML='<div class=\'log-line info\'>Cleared.</div>'"
+        style="background:transparent;border:1px solid var(--border);color:var(--sub);padding:7px 14px;border-radius:8px;cursor:pointer;font-size:.78em;font-family:inherit;align-self:flex-start">
+        <i class="fas fa-trash" style="margin-right:4px"></i>Clear Log
+      </button>
+    </div>
 
-        function toggleAuthMode() {
-            isRegisterMode = !isRegisterMode;
-            document.getElementById('auth-title').innerText = isRegisterMode ? 'Create Account' : 'Welcome Back';
-            document.getElementById('auth-desc').innerText = isRegisterMode ? 'Join the premium automation suite.' : 'Please enter your credentials to login.';
-            document.getElementById('auth-btn').innerText = isRegisterMode ? 'Sign Up' : 'Sign In';
-            document.getElementById('auth-toggle').innerText = isRegisterMode ? 'Already have an account? Sign In' : 'Need an account? Sign Up';
-        }
+  </div><!-- /senderSection -->
 
-        function initApp() {
-            document.getElementById('auth-view').style.display = 'none';
-            document.getElementById('app-view').style.display = 'flex';
-            logActivity(`User ${currentUser.username} logged in.`);
-            socket.emit('init-session', { userId: currentUser.id });
-        }
+  <!-- HISTORY SECTION -->
+  <div id="histPage">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
+      <h3 style="font-size:1.1em;font-weight:800"><i class="fas fa-history" style="color:var(--green);margin-right:8px"></i>Message History</h3>
+      <div class="export-row">
+        <button class="exp-btn exp-pdf" onclick="exportPDF()"><i class="fas fa-file-pdf"></i>Export PDF</button>
+        <button class="exp-btn exp-xls" onclick="exportExcel()"><i class="fas fa-file-excel"></i>Export Excel</button>
+        <button onclick="loadHistory()" style="background:transparent;border:1px solid var(--border);color:var(--sub);padding:7px 14px;border-radius:8px;cursor:pointer;font-family:inherit;font-size:.82em"><i class="fas fa-sync-alt"></i> Refresh</button>
+      </div>
+    </div>
 
-        function logout() {
-            localStorage.clear();
-            location.reload();
-        }
+    <!-- Filter Bar -->
+    <div class="filter-bar">
+      <i class="fas fa-search" style="color:var(--sub);font-size:.9em"></i>
+      <input type="text" id="histSearch" class="filter-inp" placeholder="Search by number..." oninput="updateHistoryView()">
+      <select id="histFilter" class="filter-sel" onchange="updateHistoryView()">
+        <option value="all">All Status</option>
+        <option value="received">Inbox (Received)</option>
+        <option value="sent">Sent Only</option>
+        <option value="failed">Failed Only</option>
+      </select>
+      <label class="filter-check">
+        <input type="checkbox" id="histUnique" onchange="updateHistoryView()"> Unique Numbers
+      </label>
+    </div>
+    <div class="tbl-wrap">
+      <table id="histTable">
+        <thead><tr><th>#</th><th>Phone Number</th><th>Message</th><th>Status</th><th>Date &amp; Time</th><th style="text-align:right">Actions</th></tr></thead>
+        <tbody id="histBody"><tr><td colspan="6" style="text-align:center;color:var(--sub);padding:30px">Click History tab to load records</td></tr></tbody>
+      </table>
+    </div>
+    <div id="histStats" style="font-size:.85em;color:var(--sub)"></div>
+  </div>
 
-        // --- WhatsApp Logic ---
-        function initWhatsApp() {
-            socket.emit('init-session', { userId: currentUser.id });
-            logActivity('Requesting QR code...');
-        }
+</div><!-- /dashPage -->
 
-        function logoutWhatsApp() {
-            socket.emit('logout-session', { userId: currentUser.id });
-            logActivity('Logging out WhatsApp...');
-        }
+<script>
+const API = location.origin;
+let numbers = [], pollT = null, statusT = null, histData = [];
+let authToken = localStorage.getItem('wa_token') || '';
+let userName  = localStorage.getItem('wa_name')  || '';
+let lastRunningState = false; 
 
-        socket.on('qr', ({ userId, qr }) => {
-            if (userId !== currentUser?.id) return;
-            const container = document.getElementById('qr-container');
-            container.innerHTML = `<img src="${qr}" alt="QR Code">`;
-            document.getElementById('instance-status-text').innerText = 'Status: Scan to Connect';
-            logActivity('QR Code generated.');
-        });
+function apiHeaders(){ return {'Content-Type':'application/json','x-auth-token':authToken}; }
 
-        socket.on('session-update', ({ userId, status }) => {
-            if (userId !== currentUser?.id) return;
-            const statusEl = document.getElementById('stat-status');
-            const statusText = document.getElementById('instance-status-text');
-            
-            statusEl.innerText = status.charAt(0).toUpperCase() + status.slice(1);
-            statusText.innerText = `Status: ${statusEl.innerText}`;
-            
-            if (status === 'connected') {
-                document.getElementById('qr-container').innerHTML = '<div style="color: var(--success); font-size: 3rem;">✅</div>';
-                statusEl.style.color = 'var(--success)';
-                logActivity('WhatsApp Connected Successfully.');
-            } else {
-                statusEl.style.color = 'var(--danger)';
-            }
-        });
+function switchTab(tab){
+  document.querySelectorAll('.auth-tab').forEach((t,i)=>t.classList.toggle('active',['login','signup'][i]===tab));
+  document.getElementById('loginForm').classList.toggle('active',tab==='login');
+  document.getElementById('signupForm').classList.toggle('active',tab==='signup');
+}
 
-        // --- Campaign ---
-        function startCampaign() {
-            const name = document.getElementById('campaign-name').value;
-            const contactsRaw = document.getElementById('contacts-paste').value;
-            const message = document.getElementById('message-text').value;
-            const delay = parseInt(document.getElementById('campaign-delay').value);
+async function doLogin(){
+  const email=document.getElementById('loginEmail').value.trim();
+  const pass=document.getElementById('loginPass').value;
+  const err=document.getElementById('loginErr');
+  err.style.display='none';
+  if(!email||!pass){err.textContent='Please fill all fields';err.style.display='block';return;}
+  try{
+    const r=await fetch(`${API}/api/login`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pass})});
+    const d=await r.json();
+    if(d.token){authLogin(d.token,d.name);}
+    else{err.textContent=d.error||'Login failed';err.style.display='block';}
+  }catch{err.textContent='❌ Server offline';err.style.display='block';}
+}
 
-            const contacts = contactsRaw.split('\n').map(c => c.trim()).filter(c => c);
+async function doRegister(){
+  const name=document.getElementById('regName').value.trim();
+  const email=document.getElementById('regEmail').value.trim();
+  const pass=document.getElementById('regPass').value;
+  const err=document.getElementById('regErr');
+  err.style.display='none';
+  if(!name||!email||!pass){err.textContent='Please fill all fields';err.style.display='block';return;}
+  if(pass.length<6){err.textContent='Password must be at least 6 characters';err.style.display='block';return;}
+  try{
+    const r=await fetch(`${API}/api/register`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,email,password:pass})});
+    const d=await r.json();
+    if(d.token){authLogin(d.token,d.name);}
+    else{err.textContent=d.error||'Registration failed';err.style.display='block';}
+  }catch{err.textContent='❌ Server offline';err.style.display='block';}
+}
 
-            if (!name || !contacts.length || !message) return alert('Please fill all fields');
+function authLogin(token,name){
+  authToken=token; userName=name;
+  localStorage.setItem('wa_token',token);
+  localStorage.setItem('wa_name',name||'');
+  document.getElementById('loginPage').style.display='none';
+  checkAndRoute();
+}
 
-            socket.emit('start-campaign', {
-                userId: currentUser.id,
-                name,
-                contacts,
-                message,
-                delay
-            });
+function doLogout(){
+  authToken=''; userName='';
+  localStorage.removeItem('wa_token'); localStorage.removeItem('wa_name');
+  location.reload();
+}
 
-            logActivity(`Campaign "${name}" launched with ${contacts.length} contacts.`);
-            showSection('dashboard');
-        }
+function showSection(s){
+  document.querySelectorAll('.dash-nav-btn').forEach((b,i)=>b.classList.toggle('active',['sender','history'][i]===s));
+  document.getElementById('senderSection').classList.toggle('active',s==='sender');
+  document.getElementById('histPage').classList.toggle('active',s==='history');
+  if(s==='history') loadHistory();
+}
 
-        socket.on('campaign-progress', (data) => {
-            document.getElementById('stat-sent').innerText = data.sent;
-            logActivity(`Progress: ${data.sent}/${data.total} sent.`);
-        });
+// Smart routing: check bot status first, skip QR if already connected
+async function checkAndRoute(){
+  document.getElementById('loginPage').style.display='none';
+  try{
+    const r=await fetch(`${API}/api/qr`,{headers:apiHeaders()});
+    if(r.status===401){localStorage.removeItem('wa_token');localStorage.removeItem('wa_name');location.reload();return;}
+    const d=await r.json();
+    if(d.status==='connected'){
+      // Already connected — skip QR entirely, go to dashboard
+      document.getElementById('qrPage').style.display='none';
+      document.getElementById('dashPage').style.display='flex';
+      if(userName) document.getElementById('userNameBadge').textContent='👤 '+userName;
+      initDash();
+    }else{
+      // Need to scan QR
+      document.getElementById('qrPage').style.display='flex';
+      pollT=setInterval(pollQR,2000); pollQR();
+    }
+  }catch{
+    // Server error — show QR page anyway
+    document.getElementById('qrPage').style.display='flex';
+    pollT=setInterval(pollQR,2000);
+  }
+}
 
-        socket.on('campaign-update', (data) => {
-            if (data.status === 'completed') {
-                logActivity(`Campaign "${data.name}" completed!`);
-                alert(`Campaign "${data.name}" finished.`);
-            }
-        });
+// Auto-login if token saved — use smart routing
+if(authToken){
+  checkAndRoute();
+} else {
+  document.getElementById('loginPage').style.display='flex';
+  document.getElementById('qrPage').style.display='none';
+  document.getElementById('dashPage').style.display='none';
+}
 
-        // --- Validator ---
-        function validateNumbers() {
-            const input = document.getElementById('validator-input').value;
-            const numbers = input.split('\n').map(n => n.trim()).filter(n => n);
-            if (!numbers.length) return alert('Enter numbers to check');
+// ── Default messages ─────────────────────────────────────────────────────────
+const DEFAULT_MSGS = [
+  'Hi! Check out our latest offers 🎉',
+  'Hello! We have something special for you today 🌟',
+  'Hey! Don\'t miss out on our exclusive deal 🔥',
+  'Hi there! We thought you\'d love this offer 💎',
+  'Hello! Your exclusive discount is waiting 🎁'
+];
 
-            logActivity(`Starting validation for ${numbers.length} numbers...`);
-            socket.emit('validate-numbers', { userId: currentUser.id, numbers });
-        }
+// ── QR Polling ───────────────────────────────────────────────────────────────
+async function pollQR() {
+  try {
+    const r    = await fetch(`${API}/api/qr`, { headers: apiHeaders() });
+    if (r.status === 401) { localStorage.removeItem('wa_token'); location.reload(); return; }
+    const data = await r.json();
+    const badge = document.getElementById('statusBadge');
+    const txt   = document.getElementById('statusTxt');
 
-        socket.on('validator-results', (results) => {
-            const container = document.getElementById('validator-results');
-            container.innerHTML = '';
-            results.forEach(res => {
-                const div = document.createElement('div');
-                div.className = 'stat-card';
-                div.style.borderLeft = `4px solid ${res.exists ? 'var(--success)' : 'var(--danger)'}`;
-                div.innerHTML = `
-                    <div style="font-size: 0.9rem;">${res.number}</div>
-                    <div style="font-weight: 700; color: ${res.exists ? 'var(--success)' : 'var(--danger)'}">
-                        ${res.exists ? 'Registered' : 'Not Found'}
-                    </div>
-                `;
-                container.appendChild(div);
-            });
-            logActivity('Validation completed.');
-        });
+    if (data.status === 'connected') {
+      document.getElementById('successEl').style.display = 'flex';
+      document.getElementById('spinEl').style.display    = 'none';
+      document.getElementById('qrBox').style.display     = 'none';
+      badge.className = 'badge connected';
+      txt.textContent = 'Connected ✓';
+      clearInterval(pollT);
+      setTimeout(showDash, 1800);
+      return;
+    }
 
-        // --- Helpers ---
-        function logActivity(msg) {
-            const log = document.getElementById('activity-log');
-            const entry = document.createElement('div');
-            entry.style.marginBottom = '5px';
-            entry.innerHTML = `<span style="color: var(--accent-primary)">[${new Date().toLocaleTimeString()}]</span> ${msg}`;
-            log.prepend(entry);
-        }
+    if (data.qr) {
+      document.getElementById('spinEl').style.display = 'none';
+      let img = document.getElementById('qrBox').querySelector('img');
+      if (!img) { img = document.createElement('img'); document.getElementById('qrBox').appendChild(img); }
+      img.src = data.qr;
+      badge.className = 'badge waiting';
+      txt.textContent = 'Scan with WhatsApp...';
+    } else {
+      badge.className = 'badge ' + (data.status === 'disconnected' ? 'disconnected' : 'waiting');
+      txt.textContent = data.status === 'disconnected' ? 'Disconnected — reconnecting...' : 'Generating QR...';
+    }
+  } catch {
+    document.getElementById('statusBadge').className = 'badge disconnected';
+    document.getElementById('statusTxt').textContent = 'Server offline — start npm start';
+  }
+}
 
-        // Persistence check
-        window.onload = () => {
-            const savedUser = localStorage.getItem('wa_user');
-            if (savedUser) {
-                currentUser = JSON.parse(savedUser);
-                initApp();
-            }
-        };
-    </script>
+function showDash(){
+  document.getElementById('qrPage').style.display='none';
+  document.getElementById('dashPage').style.display='flex';
+  if(userName) document.getElementById('userNameBadge').textContent='👤 '+userName;
+  initDash();
+}
+async function resetSession(){
+  if(!confirm('This will disconnect your WhatsApp account and delete the session. Continue?')) return;
+  try{
+    await fetch(`${API}/api/reset`,{method:'POST',headers:apiHeaders()});
+    location.reload();
+  }catch{alert('❌ Failed to reset');}
+}
+function initDash(){
+  DEFAULT_MSGS.forEach(m=>addMsg(m));
+  statusT=setInterval(pollStatus,2000);
+}
+
+// ── Input method tabs ────────────────────────────────────────────────────────
+function switchInp(tab){
+  document.querySelectorAll('.inp-tab').forEach((t,i)=>t.classList.toggle('active',['excel','paste'][i]===tab));
+  document.getElementById('excelPanel').classList.toggle('active',tab==='excel');
+  document.getElementById('pastePanel').classList.toggle('active',tab==='paste');
+}
+
+// ── Paste number parser ───────────────────────────────────────────────────────
+function parsePasted(){
+  const raw=document.getElementById('pasteArea').value;
+  // Extract all digit sequences of 10-15 digits
+  const found=[];
+  const tokens=raw.split(/[\n,;|\t]+/);
+  tokens.forEach(t=>{
+    const n=t.replace(/[\s\-\.\(\)\+]/g,'');
+    if(n.length>=10&&n.length<=15&&/^\d+$/.test(n)) found.push(n);
+  });
+  // Remove duplicates
+  numbers=[...new Set(found)];
+  showNumPreview();
+  if(!numbers.length) alert('No valid phone numbers found. Make sure numbers are 10-15 digits.');
+}
+function handleExcel(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const wb   = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+      const ws   = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
+      numbers = [];
+      rows.forEach(row => row.forEach(cell => {
+        const n = String(cell).replace(/\D/g, '');
+        if (n.length >= 10) numbers.push(n);
+      }));
+      showNumPreview();
+    } catch (err) { alert('Error reading file: ' + err.message); }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function showNumPreview() {
+  const box = document.getElementById('numPreview');
+  if (!numbers.length) { box.className = 'numPreview'; box.style.display = 'none'; return; }
+  const preview = numbers.slice(0, 5).map(n => `+${n}`).join(', ');
+  const more    = numbers.length > 5 ? ` ... and ${numbers.length - 5} more` : '';
+  box.innerHTML  = `<b style="color:var(--green)">✅ ${numbers.length} numbers loaded</b><br><span style="color:var(--sub)">${preview}${more}</span>`;
+  box.className  = 'show';
+  box.style.display = 'block';
+  document.getElementById('s-total').textContent = numbers.length;
+}
+
+// ── Messages ─────────────────────────────────────────────────────────────────
+function addMsg(text = '') {
+  const list = document.getElementById('msgList');
+  const item = document.createElement('div');
+  item.className = 'msg-item';
+  item.innerHTML = `<textarea placeholder="Type message here...">${text}</textarea><button class="del-btn" onclick="this.parentElement.remove()"><i class="fas fa-trash"></i></button>`;
+  list.appendChild(item);
+}
+
+function getMsgs() {
+  return [...document.querySelectorAll('#msgList textarea')].map(t => t.value.trim()).filter(Boolean);
+}
+
+// ── Campaign controls ────────────────────────────────────────────────────────
+async function startCampaign(){
+  if(!numbers.length){alert('Please upload or paste phone numbers first.');return;}
+  const msgs=getMsgs();
+  if(!msgs.length){alert('Please add at least one message template.');return;}
+  const mins=parseInt(document.getElementById('intervalMin').value)||10;
+  
+  const keywords = [];
+  document.querySelectorAll('.key-row').forEach(row => {
+    const k = row.querySelector('.key-inp').value.trim();
+    const v = row.querySelector('.val-inp').value.trim();
+    if(k && v) keywords.push({key:k, val:v});
+  });
+
+  try{
+    const r=await fetch(`${API}/api/bulk/start`,{
+      method:'POST',headers:apiHeaders(),
+      body:JSON.stringify({
+        numbers,messages:msgs,intervalMs:mins*60000,
+        autoReplyEnabled: document.getElementById('autoReplyCheck').checked,
+        autoReplyText: document.getElementById('autoReplyText').value.trim(),
+        keywords
+      })
+    });
+    const data=await r.json();
+    if(data.error){alert(data.error);return;}
+    document.getElementById('startBtn').style.display='none';
+    document.getElementById('stopBtn').style.display='block';
+    document.getElementById('resumeBanner').classList.remove('show');
+  }catch{alert('Cannot reach server.');}
+}
+
+async function resumeCampaign(){
+  try{
+    const r=await fetch(`${API}/api/bulk/resume`,{method:'POST',headers:apiHeaders()});
+    const d=await r.json();
+    if(d.error){alert(d.error);return;}
+    document.getElementById('resumeBanner').classList.remove('show');
+    document.getElementById('startBtn').style.display='none';
+    document.getElementById('stopBtn').style.display='block';
+  }catch{alert('Cannot reach server.');}
+}
+
+async function stopCampaign(){
+  await fetch(`${API}/api/bulk/stop`,{method:'POST',headers:apiHeaders()});
+  document.getElementById('startBtn').style.display='block';
+  document.getElementById('stopBtn').style.display='none';
+}
+
+
+let lastSyncTime = 0;
+
+async function pollStatus(){
+  if(!authToken) return;
+  try{
+    const r=await fetch(`${API}/api/bulk/status`,{headers:apiHeaders()});
+    const d=await r.json();
+
+    // Live sync history
+    if(d.lastUpdate > lastSyncTime){
+      lastSyncTime = d.lastUpdate;
+      await loadHistory();
+      if(currentChatNum) renderBubbles();
+    }
+
+    document.getElementById('s-total').textContent=d.total||numbers.length;
+    document.getElementById('s-sent').textContent=d.totalSent;
+    document.getElementById('s-fail').textContent=d.totalFailed;
+    document.getElementById('s-rem').textContent=d.remaining;
+    document.getElementById('s-idx').textContent=d.currentIndex?`#${d.currentIndex}`:'—';
+    document.getElementById('progTxt').textContent=`${d.currentIndex} / ${d.total}`;
+    const pct=d.total?(d.currentIndex/d.total*100):0;
+    document.getElementById('progBar').style.width=pct+'%';
+    // Restore pending numbers from server on login
+    if(d.pendingNumbers&&d.pendingNumbers.length&&!numbers.length){
+      numbers=d.pendingNumbers;
+      const box=document.getElementById('numPreview');
+      box.innerHTML=`<b style="color:var(--yellow)">⏳ ${d.pendingNumbers.length} numbers pending from last session</b><br><span style="color:var(--sub)">${d.pendingNumbers.slice(0,5).map(n=>'+'+n).join(', ')}${d.pendingNumbers.length>5?' ...':''}</span>`;
+      box.className='show'; box.style.display='block';
+    }
+    // Restore messages
+    if(d.messages&&d.messages.length&&!document.querySelectorAll('#msgList textarea').length){
+      d.messages.forEach(m=>addMsg(m));
+    }
+
+    // Restore Auto Reply
+    const arCheck = document.getElementById('autoReplyCheck');
+    const arText = document.getElementById('autoReplyText');
+    if(d.autoReplyText !== undefined && !arText.value){
+      arCheck.checked = d.autoReplyEnabled;
+      arText.value = d.autoReplyText;
+      arText.classList.toggle('show', d.autoReplyEnabled);
+      document.getElementById('keywordSection').classList.toggle('show', d.autoReplyEnabled);
+      if(d.keywords && d.keywords.length && !document.querySelector('.key-row')){
+        d.keywords.forEach(k => addKeyRow(k.key, k.val));
+      }
+    }
+    // Resume banner
+    const banner=document.getElementById('resumeBanner');
+    if(!d.running&&d.remaining>0){
+      document.getElementById('resumeTxt').textContent=`You have ${d.remaining} unsent numbers from your last session.`;
+      banner.classList.add('show');
+    }else{ banner.classList.remove('show'); }
+    // Log
+    if(d.log&&d.log.length){
+      const box=document.getElementById('logBox');
+      box.innerHTML=d.log.map(l=>{
+        let cls='info';
+        if(l.includes('✅')) cls='ok';
+        else if(l.includes('❌')) cls='err';
+        else if(l.includes('⏱')||l.includes('🚀')||l.includes('▶️')) cls='warn';
+        return `<div class="log-line ${cls}">${l}</div>`;
+      }).join('');
+    }
+    // Buttons & Completion Notification
+    if(d.running){
+      document.getElementById('startBtn').style.display='none';
+      document.getElementById('stopBtn').style.display='block';
+    }else{
+      document.getElementById('startBtn').style.display='block';
+      document.getElementById('stopBtn').style.display='none';
+      
+      // Detect completion: if it was running and now it's stopped, and progress is 100%
+      if(lastRunningState && !d.running && d.currentIndex > 0 && d.currentIndex >= d.total){
+        showToast(`🎉 Campaign Complete! ✅ ${d.totalSent} Sent`);
+        document.getElementById('successSound').play().catch(()=>{});
+      }
+    }
+    lastRunningState = d.running;
+  } catch {}
+}
+
+function showToast(msg){
+  const t = document.getElementById('toast');
+  document.getElementById('toastMsg').textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 5000);
+}
+
+// ── History ───────────────────────────────────────────────────────────────────
+async function loadHistory(){
+  try{
+    const r=await fetch(`${API}/api/history`,{headers:apiHeaders()});
+    histData=await r.json();
+    updateHistoryView();
+  } catch {}
+}
+
+function updateHistoryView(){
+  try {
+  const search = document.getElementById('histSearch').value.toLowerCase().trim();
+  const filter = document.getElementById('histFilter').value;
+  const unique = document.getElementById('histUnique').checked;
+  
+  let filtered = [...histData];
+  
+  // 1. Search
+  if(search) filtered = filtered.filter(h => h.number.includes(search));
+  
+  // 2. Status Filter
+  if(filter !== 'all') filtered = filtered.filter(h => h.status === filter);
+  
+  // 3. Unique Numbers (Show only the latest message per number)
+  if(unique){
+    const map = new Map();
+    filtered.forEach(h => { if(!map.has(h.number)) map.set(h.number, h); });
+    filtered = Array.from(map.values());
+  }
+
+  const tbody=document.getElementById('histBody');
+  if(!filtered.length){
+    tbody.innerHTML=`<tr><td colspan="6" style="text-align:center;color:var(--sub);padding:30px">No matching records found.</td></tr>`;
+    document.getElementById('histStats').textContent = `Total: 0`;
+    return;
+  }
+
+  tbody.innerHTML=filtered.map((h,i)=>{
+      const dt=new Date(h.sentAt).toLocaleString('en-IN');
+      let dot='dot-sent', badge=`<span class="badge-sent">✅ Sent</span>`;
+      if(h.status==='failed'){ dot='dot-fail'; badge=`<span class="badge-fail">❌ Failed</span>`; }
+      else if(h.status==='received'){ dot='dot-in'; badge=`<span style="background:rgba(59,130,246,.1);color:#3b82f6;padding:4px 8px;border-radius:6px;font-size:.78em;font-weight:700">📩 Inbox</span>`; }
+      
+      const msg=h.message?h.message.replace(/</g,'&lt;').replace(/>/g,'&gt;'):'';
+      return `<tr>
+        <td style="color:var(--sub)">${i+1}</td>
+        <td><span class="copyable" onclick="copyToClipboard('${h.number}')"><span class="${dot}"></span>+${h.number}</span></td>
+        <td style="max-width:300px">${msg}</td>
+        <td>${badge}</td>
+        <td style="color:var(--sub);white-space:nowrap">${dt}</td>
+        <td style="text-align:right">
+          <div style="display:flex;gap:6px;justify-content:flex-end">
+            <button class="act-btn" onclick="openChat('${h.number}')" title="Open Chat"><i class="fas fa-comments"></i></button>
+            <button class="act-btn del" onclick="deleteRecord('${h.sentAt}')" title="Delete record"><i class="fas fa-trash"></i></button>
+          </div>
+        </td>
+      </tr>`;
+    }).join('');
+    const sent=filtered.filter(h=>h.status==='sent').length;
+    const recv=filtered.filter(h=>h.status==='received').length;
+    document.getElementById('histStats').textContent=`Showing: ${filtered.length} | ✅ Sent: ${sent} | 📩 Inbox: ${recv} | ❌ Failed: ${filtered.length-sent-recv}`;
+  }catch(e){console.error(e);}
+}
+
+// ── Export PDF ────────────────────────────────────────────────────────────────
+function exportPDF(){
+  if(!histData.length){alert('No history data to export.');return;}
+  const {jsPDF}=window.jspdf;
+  const doc=new jsPDF({orientation:'landscape'});
+  doc.setFontSize(16); doc.setTextColor(37,211,102);
+  doc.text('WA Bulk Sender — Message History',14,15);
+  doc.setFontSize(9); doc.setTextColor(100);
+  doc.text(`Exported: ${new Date().toLocaleString('en-IN')}  |  Total: ${histData.length}`,14,22);
+  doc.autoTable({
+    startY:28,
+    head:[['#','Phone Number','Message','Status','Date & Time']],
+    body:histData.map((h,i)=>[i+1,'+'+h.number,h.message||'',h.status==='sent'?'✅ Sent':'❌ Failed',new Date(h.sentAt).toLocaleString('en-IN')]),
+    styles:{fontSize:8,cellPadding:4,overflow:'linebreak'},
+    columnStyles:{0:{cellWidth:10},1:{cellWidth:32},2:{cellWidth:100},3:{cellWidth:22},4:{cellWidth:40}},
+    headStyles:{fillColor:[14,26,46],textColor:[37,211,102],fontStyle:'bold'},
+    alternateRowStyles:{fillColor:[11,21,38]},
+    bodyStyles:{fillColor:[14,26,46],textColor:[220,232,240]},
+    margin:{left:14,right:14}
+  });
+  doc.save(`wa-history-${Date.now()}.pdf`);
+}
+
+// ── Export Excel ──────────────────────────────────────────────────────────────
+function exportExcel(){
+  if(!histData.length){alert('No history data to export.');return;}
+  const rows=[['#','Phone Number','Message','Status','Date & Time']];
+  histData.forEach((h,i)=>rows.push([i+1,'+'+h.number,h.message||'',h.status,new Date(h.sentAt).toLocaleString('en-IN')]));
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols']=[{wch:5},{wch:15},{wch:60},{wch:10},{wch:22}];
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'History');
+  XLSX.writeFile(wb,`wa-history-${Date.now()}.xlsx`);
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+if(!authToken){
+  document.getElementById('qrPage').style.display='none';
+  document.getElementById('loginPage').style.display='flex';
+}else{
+  pollT=setInterval(pollQR,2000); pollQR();
+}
+function addKeyRow(k='', v=''){
+  const div = document.createElement('div');
+  div.className = 'key-row';
+  div.innerHTML = `
+    <input type="text" class="key-inp" placeholder="Keyword" value="${k}">
+    <i class="fas fa-arrow-right" style="font-size:.7em;color:var(--sub)"></i>
+    <input type="text" class="val-inp" placeholder="Reply" value="${v}">
+    <button class="del-btn" onclick="this.parentElement.remove()" style="padding:0;width:28px;height:28px"><i class="fas fa-times"></i></button>
+  `;
+  document.getElementById('keyList').appendChild(div);
+}
+
+function handleToggleReply(cb){
+  document.getElementById('autoReplyText').classList.toggle('show', cb.checked);
+  document.getElementById('keywordSection').classList.toggle('show', cb.checked);
+}
+
+function copyToClipboard(txt){
+  navigator.clipboard.writeText(txt);
+  showToast('Number copied to clipboard!');
+}
+
+async function deleteRecord(ts){
+  if(!confirm('Delete this record?')) return;
+  try{
+    await fetch(`${API}/api/history/delete`,{
+      method:'POST',headers:apiHeaders(),
+      body:JSON.stringify({timestamp:ts})
+    });
+    loadHistory();
+  }catch{}
+}
+
+let currentChatNum = '';
+let templateIdx = 0;
+const TEMPLATES = [
+  'Hi! How can I help you today?',
+  'Thanks for reaching out! We will get back to you shortly.',
+  'Could you please share more details about your requirement?',
+  'Our current price list is attached. Would you like to place an order?',
+  'Sure, I can help with that. Please wait a moment.'
+];
+
+function openChat(num){
+  currentChatNum = num;
+  document.getElementById('chatTarget').textContent = '+'+num;
+  renderBubbles();
+  document.getElementById('chatModal').classList.add('show');
+  setTimeout(() => {
+    const c = document.getElementById('chatContainer');
+    c.scrollTop = c.scrollHeight;
+    document.getElementById('chatInput').focus();
+  }, 100);
+}
+
+function renderBubbles(){
+  const container = document.getElementById('chatContainer');
+  const thread = histData.filter(h => h.number === currentChatNum).sort((a,b) => new Date(a.sentAt) - new Date(b.sentAt));
+  
+  if(!thread.length){ container.innerHTML = '<div style="text-align:center;color:var(--sub);margin-top:100px">No conversation history</div>'; return; }
+  
+  container.innerHTML = thread.map(m => {
+    const isSent = m.status === 'sent';
+    const time = new Date(m.sentAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', hour12:true});
+    const check = isSent ? `<i class="fas fa-check-double"></i>` : '';
+    return `
+      <div class="bubble-wrap ${isSent?'sent':'received'}">
+        <div class="bubble">
+          ${m.message.replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+          <div class="bubble-meta">${time} ${check}</div>
+        </div>
+      </div>
+    `;
+  }).join('');
+  // Auto-scroll to bottom
+  container.scrollTop = container.scrollHeight;
+}
+
+function closeChat(){ document.getElementById('chatModal').classList.remove('show'); currentChatNum = ''; document.getElementById('emojiPanel').classList.remove('show'); }
+
+function toggleEmoji(){ document.getElementById('emojiPanel').classList.toggle('show'); }
+function addEmoji(e){ document.getElementById('chatInput').value += e; document.getElementById('chatInput').focus(); }
+function addTemplate(){ 
+  document.getElementById('chatInput').value = TEMPLATES[templateIdx]; 
+  templateIdx = (templateIdx + 1) % TEMPLATES.length;
+  document.getElementById('chatInput').focus(); 
+}
+
+async function sendChat(){
+  const text = document.getElementById('chatInput').value.trim();
+  if(!text || !currentChatNum) return;
+  try {
+    const r = await fetch(`${API}/api/send-direct`, {
+      method:'POST',headers:apiHeaders(),
+      body:JSON.stringify({to:currentChatNum, text})
+    });
+    const d = await r.json();
+    if(d.error) alert(d.error);
+    else {
+      document.getElementById('chatInput').value = '';
+      // We need to refresh history to see the new sent message in bubbles
+      await loadHistory(); 
+      renderBubbles();
+      const c = document.getElementById('chatContainer');
+      c.scrollTop = c.scrollHeight;
+    }
+  } catch(e) { alert('Failed to send'); }
+}
+</script>
 </body>
 </html>
