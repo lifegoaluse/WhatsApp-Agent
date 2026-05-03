@@ -130,6 +130,7 @@
             <div class="nav-header">Advanced Modules</div>
             <div class="nav-item" onclick="showView('bulk-splitter', this)"><i class="fas fa-bolt"></i> Fast Bulk Splitter</div>
             <div class="nav-item" onclick="showView('number-filter', this)"><i class="fas fa-filter"></i> Number Filter</div>
+            <div class="nav-item" onclick="showView('manual-share', this)"><i class="fas fa-share-square"></i> Manual Share</div>
             
             <div class="nav-header">Customer Care</div>
             <div class="nav-item" onclick="showView('inbox', this)"><i class="fas fa-envelope-open-text"></i> Unified Inbox</div>
@@ -180,7 +181,10 @@
 
             <!-- CAMPAIGN -->
             <div id="v-campaigns" class="view-section">
-                <div class="header-row"><h2>New Campaign</h2></div>
+                <div class="header-row">
+                    <h2>New Campaign</h2>
+                    <div style="display:flex; gap:10px;"><button class="btn btn-outline btn-sm" onclick="clearCampaignForm()">Clear All</button></div>
+                </div>
                 <div style="display:grid; grid-template-columns: 1.2fr 1fr; gap:30px;">
                     <div class="panel">
                         <label>Campaign Title</label><input id="c-name" class="form-input" placeholder="Marketing Wave #1">
@@ -195,7 +199,13 @@
                         <div id="c-preview" style="font-size:0.85em; color:var(--text-muted);">Ready to process.</div>
                     </div>
                     <div class="panel">
-                        <label>Message Template</label><textarea id="c-msg" class="form-input" rows="5" placeholder="Hi {name}, ..."></textarea>
+                        <label>Message Template</label>
+                        <div style="display:flex; gap:8px; margin-bottom:10px;">
+                            <button class="btn btn-outline btn-sm" onclick="setPreset(1)">Preset 1</button>
+                            <button class="btn btn-outline btn-sm" onclick="setPreset(2)">Preset 2</button>
+                            <button class="btn btn-outline btn-sm" onclick="setPreset(3)">Preset 3</button>
+                        </div>
+                        <textarea id="c-msg" class="form-input" rows="5" placeholder="Hi {name}, ..."></textarea>
                         <label>Delay Range (sec)</label><div style="display:flex; gap:10px;"><input type="number" id="c-min" class="form-input" value="15"><input type="number" id="c-max" class="form-input" value="45"></div>
                         <label>Account Selection</label><div id="c-acc-list" style="margin-bottom:20px; display:flex; flex-wrap:wrap; gap:8px;"></div>
                         <button class="btn btn-primary" style="width:100%; justify-content:center;" onclick="launchCampaign()">Launch Campaign</button>
@@ -277,6 +287,38 @@
                         <div class="table-wrap" style="max-height: 400px; overflow-y: auto;">
                             <table><thead><tr><th>Number</th><th>Status</th></tr></thead><tbody id="nf-results-table"></tbody></table>
                         </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- MANUAL SHARE -->
+            <div id="v-manual-share" class="view-section">
+                <div class="header-row">
+                    <h2>Manual Share / Link Generator</h2>
+                    <div style="display:flex; gap:10px;"><button class="btn btn-outline btn-sm" onclick="clearManualShare()">Clear All</button></div>
+                </div>
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:30px;">
+                    <div class="panel">
+                        <label>Target List (Copy/Paste or Excel)</label>
+                        <textarea id="ms-numbers" class="form-input" rows="8" placeholder="Paste numbers here..."></textarea>
+                        <div style="display:flex; gap:10px; margin-bottom:15px;">
+                            <input type="file" id="ms-excel-file" style="display:none;" onchange="handleManualShareExcel(this)">
+                            <button class="btn btn-outline btn-sm" onclick="document.getElementById('ms-excel-file').click()">Upload Excel</button>
+                            <button class="btn btn-primary btn-sm" onclick="generateManualShareLinks()">Generate Links</button>
+                        </div>
+                    </div>
+                    <div class="panel">
+                        <label>Preloaded Message</label>
+                        <textarea id="ms-msg" class="form-input" rows="10">*Naukri Bazzar*                                                               *नोकरी बाजार*                                                 
+We provide free jobs all over India as babysitter Housemaids cooks Helpers patient care taker Drivers office boy etc join this group we will post jobs in this group everyday also forward this message in your groups
+हम पूरे भारत में बेबीसिटर, घरेलू नौकरानी, रसोइया, सहायक, रोगी देखभालकर्ता, ड्राइवर, ऑफिस बॉय आदि के रूप में मुफ्त नौकरियां प्रदान करते हैं। इस समूह में शामिल हों, हम इस समूह में प्रतिदिन नौकरियां पोस्ट करेंगे। कृपया इस संदेश को अपने समूहों में भी फॉरवर्ड करें।
+https://chat.whatsapp.com/CqXROPWSrIH5b5wQ0oKfjI</textarea>
+                    </div>
+                </div>
+                <div class="panel" style="margin-top:20px;">
+                    <label>Generated Links</label>
+                    <div id="ms-links" style="display:flex; flex-direction:column; gap:10px; max-height:400px; overflow-y:auto;">
+                        <div style="color:var(--text-muted); font-size:0.9em;">Click 'Generate Links' to create clickable WhatsApp buttons.</div>
                     </div>
                 </div>
             </div>
@@ -552,8 +594,16 @@
                 </div>
             `).join('');
             
-            const accSelectors = accounts.map(a => `<label style="background:var(--card-hover); padding:8px; border-radius:8px; cursor:pointer; font-size:0.8em; display:flex; align-items:center; gap:5px;"><input type="checkbox" name="c-acc" value="${a.id}" ${a.status==='active'?'checked':''}> ${a.name}</label>`).join('');
-            document.getElementById('c-acc-list').innerHTML = `
+            const cAccList = document.getElementById('c-acc-list');
+            const hadRendered = cAccList.innerHTML.trim() !== '';
+            const prevChecked = Array.from(document.querySelectorAll('input[name="c-acc"]:checked')).map(i => i.value);
+
+            const accSelectors = accounts.map(a => {
+                const isChecked = hadRendered ? prevChecked.includes(a.id) : a.status === 'active';
+                return `<label style="background:var(--card-hover); padding:8px; border-radius:8px; cursor:pointer; font-size:0.8em; display:flex; align-items:center; gap:5px;"><input type="checkbox" name="c-acc" value="${a.id}" ${isChecked ? 'checked' : ''}> ${a.name}</label>`;
+            }).join('');
+            
+            cAccList.innerHTML = `
                 <div style="width:100%; display:flex; gap:10px; margin-bottom:10px;">
                     <button class="btn btn-outline btn-sm" onclick="selectAllAcc(true)">Select All</button>
                     <button class="btn btn-outline btn-sm" onclick="selectAllAcc(false)">None</button>
@@ -566,7 +616,11 @@
             const activeAccs = accounts.filter(a => a.status === 'active');
             const nfSelect = document.getElementById('nf-acc-select');
             if(nfSelect) {
+                const currentVal = nfSelect.value;
                 nfSelect.innerHTML = activeAccs.map(a => `<option value="${a.id}">${a.name} (${a.phoneNumber})</option>`).join('') || '<option value="">No Active Devices</option>';
+                if (currentVal && activeAccs.find(a => a.id === currentVal)) {
+                    nfSelect.value = currentVal;
+                }
             }
         }
 
@@ -758,6 +812,7 @@
                 if (key.includes('num') || key.includes('phone') || key.includes('target') || key.includes('mobile')) number = val.replace(/\D/g, '');
             }
             if(!name && !number) return {}; // Skip empty
+            if(number.length === 10) number = '91' + number; // Auto-append Indian code
             return { name: name || 'Valued Client', number };
         }
 
@@ -769,24 +824,102 @@
                 const data = new Uint8Array(e.target.result);
                 const wb = XLSX.read(data, {type:'array'});
                 rawContacts = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]).map(smartParse).filter(c => c.number);
+                document.getElementById('c-numbers').value = rawContacts.map(c => `${c.name || 'Client'}, ${c.number}`).join('\n');
                 updatePreview();
                 notify(`${rawContacts.length} contacts loaded from file.`, 'success');
             };
             reader.readAsArrayBuffer(input.files[0]);
         }
         function updatePreview() {
+            parseManualContacts();
             const start = parseInt(document.getElementById('c-start').value) || 1;
             const end = parseInt(document.getElementById('c-end').value) || rawContacts.length;
             document.getElementById('c-preview').innerText = `${rawContacts.length} items. Selected ${rawContacts.slice(start-1, end).length}`;
         }
+        function parseManualContacts() {
+            const text = document.getElementById('c-numbers').value.trim();
+            if (!text) {
+                rawContacts = [];
+                return;
+            }
+            rawContacts = text.split('\n').filter(l => l.trim() !== '').map(line => {
+                const parts = line.split(',');
+                let name = 'Client', number = '';
+                if (parts.length > 1) {
+                    name = parts[0].trim();
+                    number = parts[1].replace(/\D/g, '');
+                } else {
+                    number = line.replace(/\D/g, '');
+                }
+                if (number.length === 10) number = '91' + number;
+                return { name, number };
+            }).filter(c => c.number.length >= 8);
+        }
         function applyRange() { updatePreview(); }
 
+        function clearCampaignForm() {
+            document.getElementById('c-name').value = '';
+            document.getElementById('c-numbers').value = '';
+            document.getElementById('c-msg').value = '';
+            document.getElementById('c-start').value = '';
+            document.getElementById('c-end').value = '';
+            document.getElementById('excel-file').value = '';
+            rawContacts = [];
+            updatePreview();
+            notify('Campaign form cleared', 'info');
+        }
+
+        function setPreset(n) {
+            const msgs = [
+                "Hello {name}, hope you are doing well! Just wanted to share our latest catalog with you.",
+                "Hi {name}, thank you for being a valued customer. Use code WELCOME10 for 10% off your next order!",
+                "Greetings {name}, this is a courtesy follow-up regarding your recent inquiry. Let us know if you need help."
+            ];
+            document.getElementById('c-msg').value = msgs[n-1];
+        }
+
         async function launchCampaign() {
+            const name = document.getElementById('c-name').value;
+            const template = document.getElementById('c-msg').value;
+            const accountIds = [...document.querySelectorAll('input[name="c-acc"]:checked')].map(i => i.value);
+            
+            parseManualContacts(); // Ensure manual edits are captured
+
+            if(!name) return notify('Please enter a campaign name', 'error');
+            if(!template) return notify('Please enter a message template', 'error');
+            if(!accountIds.length) return notify('Please select at least one active account', 'error');
+            if(!rawContacts.length) return notify('Please add some contacts first', 'error');
+
             const start = parseInt(document.getElementById('c-start').value) || 1;
             const end = parseInt(document.getElementById('c-end').value) || rawContacts.length;
-            const data = { name: document.getElementById('c-name').value, contacts: rawContacts.slice(start-1, end), template: document.getElementById('c-msg').value, accountIds: [...document.querySelectorAll('input[name="c-acc"]:checked')].map(i => i.value), minDelay: document.getElementById('c-min').value, maxDelay: document.getElementById('c-max').value };
-            await callAPI('/api/v2/campaigns/start', { method:'POST', body: JSON.stringify(data), headers:{'Content-Type':'application/json'}});
-            showView('dash');
+            const contacts = rawContacts.slice(start-1, end);
+            
+            if(!contacts.length) return notify('No contacts selected in the specified range', 'error');
+
+            const data = { 
+                name, 
+                contacts, 
+                template, 
+                accountIds, 
+                minDelay: parseInt(document.getElementById('c-min').value) || 15, 
+                maxDelay: parseInt(document.getElementById('c-max').value) || 45 
+            };
+            
+            try {
+                const res = await callAPI('/api/v2/campaigns/start', { 
+                    method:'POST', 
+                    body: JSON.stringify(data), 
+                    headers:{'Content-Type':'application/json'}
+                });
+                if(res.success) {
+                    notify('Campaign launched successfully!', 'success');
+                    showView('dash');
+                } else {
+                    notify(res.error || 'Failed to launch campaign', 'error');
+                }
+            } catch(e) {
+                notify('Error connecting to server', 'error');
+            }
         }
 
         async function loadV2Data() {
@@ -985,6 +1118,72 @@
             const list = window.lastFilterResults.filter(r => r.exists === isValid).map(r => r.number).join('\n');
             if(!list) return notify('No numbers found for this filter', 'info');
             navigator.clipboard.writeText(list).then(() => notify('Copied to clipboard!', 'success'));
+        }
+
+        // --- MANUAL SHARE MODULE ---
+        let msContacts = [];
+        
+        function handleManualShareExcel(input) {
+            if(!input.files[0]) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const data = new Uint8Array(e.target.result);
+                const wb = XLSX.read(data, {type:'array'});
+                msContacts = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]).map(smartParse).filter(c => c.number);
+                document.getElementById('ms-numbers').value = msContacts.map(c => `${c.name || 'Client'}, ${c.number}`).join('\n');
+                notify(`${msContacts.length} contacts loaded from file.`, 'success');
+            };
+            reader.readAsArrayBuffer(input.files[0]);
+        }
+        
+        function parseManualShareContacts() {
+            const text = document.getElementById('ms-numbers').value.trim();
+            if (!text) { msContacts = []; return; }
+            msContacts = text.split('\n').filter(l => l.trim() !== '').map(line => {
+                const parts = line.split(',');
+                let name = 'Client', number = '';
+                if (parts.length > 1) {
+                    name = parts[0].trim();
+                    number = parts[1].replace(/\D/g, '');
+                } else {
+                    number = line.replace(/\D/g, '');
+                }
+                if (number.length === 10) number = '91' + number;
+                return { name, number };
+            }).filter(c => c.number.length >= 8);
+        }
+
+        function generateManualShareLinks() {
+            parseManualShareContacts();
+            const msgTemplate = document.getElementById('ms-msg').value;
+            const container = document.getElementById('ms-links');
+            
+            if (!msContacts.length) {
+                container.innerHTML = `<div style="color:var(--text-muted); font-size:0.9em;">No valid contacts found. Please add numbers.</div>`;
+                return;
+            }
+            
+            container.innerHTML = msContacts.map((c, idx) => {
+                const msg = encodeURIComponent(msgTemplate.replace(/{name}/g, c.name || 'Friend'));
+                const link = `https://wa.me/${c.number}?text=${msg}`;
+                return `
+                    <div style="background:var(--card-bg); border:1px solid var(--border); padding:10px 15px; border-radius:8px; display:flex; justify-content:space-between; align-items:center;">
+                        <div>
+                            <strong>${c.name || 'Client'}</strong> <span style="color:var(--text-muted); font-size:0.9em;">(${c.number})</span>
+                        </div>
+                        <a href="${link}" target="_blank" class="btn btn-primary btn-sm" onclick="this.style.opacity='0.5'; this.innerText='Opened';"><i class="fab fa-whatsapp"></i> Open WhatsApp</a>
+                    </div>
+                `;
+            }).join('');
+            notify(`${msContacts.length} links generated!`, 'success');
+        }
+        
+        function clearManualShare() {
+            document.getElementById('ms-numbers').value = '';
+            document.getElementById('ms-excel-file').value = '';
+            document.getElementById('ms-msg').value = '*Naukri Bazzar*                                                               *नोकरी बाजार*                                                 \nWe provide free jobs all over India as babysitter Housemaids cooks Helpers patient care taker Drivers office boy etc join this group we will post jobs in this group everyday also forward this message in your groups\nहम पूरे भारत में बेबीसिटर, घरेलू नौकरानी, रसोइया, सहायक, रोगी देखभालकर्ता, ड्राइवर, ऑफिस बॉय आदि के रूप में मुफ्त नौकरियां प्रदान करते हैं। इस समूह में शामिल हों, हम इस समूह में प्रतिदिन नौकरियां पोस्ट करेंगे। कृपया इस संदेश को अपने समूहों में भी फॉरवर्ड करें।\nhttps://chat.whatsapp.com/CqXROPWSrIH5b5wQ0oKfjI';
+            document.getElementById('ms-links').innerHTML = `<div style="color:var(--text-muted); font-size:0.9em;">Click 'Generate Links' to create clickable WhatsApp buttons.</div>`;
+            msContacts = [];
         }
 
         function logout() { localStorage.removeItem('WA_PRO_TOKEN'); location.reload(); }

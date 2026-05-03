@@ -110,6 +110,13 @@ const UserSchema = new mongoose.Schema({
     createdAt: { type: Date, default: Date.now }
 });
 
+const AuthStateSchema = new mongoose.Schema({
+    accId: { type: String, required: true, index: true },
+    file: { type: String, required: true, index: true },
+    data: { type: String }
+});
+AuthStateSchema.index({ accId: 1, file: 1 }, { unique: true });
+
 module.exports = {
     User: mongoose.model('User', UserSchema),
     Account: mongoose.model('Account', AccountSchema),
@@ -120,5 +127,6 @@ module.exports = {
     ContactMaster: mongoose.model('ContactMaster', ContactMasterSchema),
     Inbox: mongoose.model('Inbox', InboxSchema),
     Message: mongoose.model('Message', MessageSchema),
-    Assignment: mongoose.model('Assignment', AssignmentSchema)
+    Assignment: mongoose.model('Assignment', AssignmentSchema),
+    AuthState: mongoose.model('AuthState', AuthStateSchema)
 };

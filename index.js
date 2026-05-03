@@ -1,4 +1,4 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, Browsers } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, Browsers, initAuthCreds, BufferJSON, proto } = require('@whiskeysockets/baileys');
 const pino   = require('pino');
 const http   = require('http');
 const QRCode = require('qrcode');
@@ -7,7 +7,7 @@ const path   = require('path');
 const crypto = require('crypto');
 const jwt    = require('jsonwebtoken');
 const connectDB = require('./db');
-const { User, Account, Batch, BatchItem, Campaign, History, ContactMaster, Inbox, Message, Assignment } = require('./models');
+const { User, Account, Batch, BatchItem, Campaign, History, ContactMaster, Inbox, Message, Assignment, AuthState } = require('./models');
 
 // ── CONFIG & DIRECTORIES ─────────────────────────────────────────────────────
 try {
@@ -44,6 +44,56 @@ const signToken = (user) => jwt.sign(user, JWT_SECRET, { expiresIn: '7d' });
 const verifyToken = (token) => { try { return jwt.verify(token, JWT_SECRET); } catch(e) { return null; } };
 
 // ── SERVICE: MULTI-ACCOUNT ───────────────────────────────────────────────────
+async function useMongoDBAuthState(accId) {
+    const writeData = async (data, file) => {
+        await AuthState.findOneAndUpdate({ accId, file }, { data: JSON.stringify(data, BufferJSON.replacer) }, { upsert: true });
+    };
+
+    const readData = async (file) => {
+        try {
+            const doc = await AuthState.findOne({ accId, file });
+            if (doc && doc.data) return JSON.parse(doc.data, BufferJSON.reviver);
+            return null;
+        } catch (error) { return null; }
+    };
+
+    const removeData = async (file) => { await AuthState.deleteOne({ accId, file }); };
+
+    const creds = await readData('creds.json') || initAuthCreds();
+
+    return {
+        state: {
+            creds,
+            keys: {
+                get: async (type, ids) => {
+                    const data = {};
+                    await Promise.all(ids.map(async id => {
+                        let value = await readData(`${type}-${id}.json`);
+                        if (type === 'app-state-sync-key' && value) {
+                            value = proto.Message.AppStateSyncKeyData.fromObject(value);
+                        }
+                        data[id] = value;
+                    }));
+                    return data;
+                },
+                set: async (data) => {
+                    const tasks = [];
+                    for (const category in data) {
+                        for (const id in data[category]) {
+                            const value = data[category][id];
+                            const file = `${category}-${id}.json`;
+                            if (value) tasks.push(writeData(value, file));
+                            else tasks.push(removeData(file));
+                        }
+                    }
+                    await Promise.all(tasks);
+                }
+            }
+        },
+        saveCreds: () => writeData(creds, 'creds.json')
+    };
+}
+
 async function initBot(userId, accId) {
     let bot = bots.get(accId);
     if (!bot) { bot = { status:'waiting', userId, accId }; bots.set(accId, bot); }
@@ -53,8 +103,7 @@ async function initBot(userId, accId) {
 
     try {
         if (bot.sock) { bot.sock.ev.removeAllListeners(); try { bot.sock.ws.close(); } catch(e) {} }
-        const sessDir = path.join(SESSION_DIR, accId);
-        const { state, saveCreds } = await useMultiFileAuthState(sessDir);
+        const { state, saveCreds } = await useMongoDBAuthState(accId);
         let version = [2, 2332, 15];
         try { const { version: v } = await fetchLatestBaileysVersion(); version = v; } catch(e) {}
         
@@ -123,26 +172,35 @@ async function processV2Campaign(campId) {
     const jid = String(contact.number).replace(/\D/g, '') + '@s.whatsapp.net';
     const message = c.template.replace(/{name}/g, contact.name || 'Friend');
 
+    console.log(`[CAMPAIGN] Sending message ${c.currentIndex + 1}/${c.contacts.length} to ${contact.number} using ${targetAcc.name}`);
+
     try {
         const bot = bots.get(targetAcc.id);
         if (bot && bot.sock && bot.status === 'active') {
             await bot.sock.sendMessage(jid, { text: message });
             c.sentCount++;
             await new History({ id: mkId(), num: contact.number, msg: message, status: 'sent', accId: targetAcc.id, campName: c.name, userId: c.createdBy }).save();
+            console.log(`[CAMPAIGN] Message sent to ${contact.number}`);
         } else {
-            // Account went offline during process, skip this turn but don't increment index yet to retry with another
+            console.warn(`[CAMPAIGN] Bot ${targetAcc.name} went offline, retrying in 5s...`);
             const delay = 5000;
             activeV2Jobs.set(campId, setTimeout(() => processV2Campaign(campId), delay));
             return;
         }
     } catch (e) {
+        console.error(`[CAMPAIGN] Failed to send message to ${contact.number}:`, e.message);
         c.failCount++;
         await new History({ id: mkId(), num: contact.number, msg: message, status: 'failed', accId: targetAcc.id, campName: c.name, userId: c.createdBy }).save();
     }
 
     c.currentIndex++; 
     await c.save();
-    const delay = (c.minDelay + Math.random() * (c.maxDelay - c.minDelay)) * 1000;
+    
+    const minD = Number(c.minDelay) || 15;
+    const maxD = Number(c.maxDelay) || 45;
+    const delay = (minD + Math.random() * (maxD - minD)) * 1000;
+    
+    console.log(`[CAMPAIGN] Next message in ${Math.round(delay/1000)} seconds`);
     activeV2Jobs.set(campId, setTimeout(() => processV2Campaign(campId), delay));
 }
 
@@ -231,7 +289,9 @@ const requestHandler = async (req, res) => {
         }
         bots.delete(id);
         
-        // Remove session directory
+        await AuthState.deleteMany({ accId: id });
+        
+        // Remove session directory (legacy cleanup)
         const sessDir = path.join(SESSION_DIR, id);
         if (fs.existsSync(sessDir)) {
             try { fs.rmSync(sessDir, { recursive: true, force: true }); } catch(e) { console.error(`[SYSTEM] Failed to delete session dir: ${sessDir}`, e); }
@@ -241,7 +301,22 @@ const requestHandler = async (req, res) => {
     }
     if (url === '/api/v2/accounts/qr' && req.method === 'GET') {
         const id = new URL(req.url, `http://${req.headers.host}`).searchParams.get('id');
-        const bot = bots.get(id);
+        const acc = await Account.findOne({ id });
+        if (!acc) return json(res, { error: 'Account not found' }, 404);
+
+        let bot = bots.get(id);
+        
+        // Restart bot connection if it's dead or explicitly logged out
+        if (!bot || !bot.sock || bot.status === 'logged_out' || bot.status === 'disconnected') {
+            if (bot?.status === 'logged_out') {
+                // Clear old invalid session data to force a new QR code scan
+                await AuthState.deleteMany({ accId: id });
+                try { fs.rmSync(path.join(SESSION_DIR, id), { recursive: true, force: true }); } catch(e){}
+            }
+            initBot(acc.userId, id);
+            bot = bots.get(id);
+        }
+
         if (bot?.qr) return json(res, { qr: await QRCode.toDataURL(bot.qr) });
         return json(res, { status: bot?.status || 'waiting' });
     }
