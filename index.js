@@ -390,7 +390,13 @@ const requestHandler = async (req, res) => {
         const c = await Campaign.findOne({ id });
         if (c) {
             if (action === 'pause') { c.status = 'paused'; clearTimeout(activeV2Jobs.get(id)); }
-            if (action === 'resume') { c.status = 'running'; processV2Campaign(id); }
+            if (action === 'resume') { 
+                c.status = 'running'; 
+                const minD = parseInt(c.minDelay, 10) || 15;
+                const maxD = parseInt(c.maxDelay, 10) || 45;
+                const delay = Math.floor((minD + Math.random() * (maxD - minD)) * 1000);
+                activeV2Jobs.set(id, setTimeout(() => processV2Campaign(id), delay));
+            }
             if (action === 'delete') { clearTimeout(activeV2Jobs.get(id)); await Campaign.findOneAndDelete({ id }); }
             else await c.save();
             return json(res, { success: true });
