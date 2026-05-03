@@ -789,6 +789,7 @@ async function startCampaign(){
       })
     });
     const data=await r.json();
+    if(data.error === 'Unauthorized'){ doLogout(); return; }
     if(data.error){alert(data.error);return;}
     document.getElementById('startBtn').style.display='none';
     document.getElementById('stopBtn').style.display='block';
@@ -800,6 +801,7 @@ async function resumeCampaign(){
   try{
     const r=await fetch(`${API}/api/bulk/resume`,{method:'POST',headers:apiHeaders()});
     const d=await r.json();
+    if(d.error === 'Unauthorized'){ doLogout(); return; }
     if(d.error){alert(d.error);return;}
     document.getElementById('resumeBanner').classList.remove('show');
     document.getElementById('startBtn').style.display='none';
@@ -821,6 +823,7 @@ async function pollStatus(){
   try{
     const r=await fetch(`${API}/api/bulk/status`,{headers:apiHeaders()});
     const d=await r.json();
+    if(d.error === 'Unauthorized'){ doLogout(); return; }
 
     // Live sync history
     if(d.lastUpdate > lastSyncTime){
