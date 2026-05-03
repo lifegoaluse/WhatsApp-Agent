@@ -32,18 +32,6 @@
 body{font-family:'Plus Jakarta Sans',sans-serif;background:#08101e;color:#e2e8f0;min-height:100vh}
 :root{--green:#25D366;--green2:#128C7E;--dark:#08101e;--card:#0e1a2e;--card2:#111f35;--border:#1e3050;--text:#e2e8f0;--sub:#64748b;--red:#ef4444;--yellow:#f59e0b}
 
-/* ── QR PAGE ── */
-#qrPage{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:20px;gap:24px}
-.qr-logo{font-size:2.8em;color:var(--green);filter:drop-shadow(0 0 20px rgba(37,211,102,0.4))}
-.qr-card{background:var(--card);border:1px solid var(--border);border-radius:24px;padding:36px;text-align:center;max-width:380px;width:100%;box-shadow:0 25px 50px rgba(0,0,0,0.5)}
-.qr-card h1{font-size:1.5em;font-weight:800;margin-bottom:6px}
-.qr-card .sub{color:var(--sub);font-size:.9em;margin-bottom:24px}
-#qrBox{width:240px;height:240px;background:#fff;border-radius:16px;margin:0 auto 20px;display:flex;align-items:center;justify-content:center;overflow:hidden;box-shadow:0 8px 25px rgba(0,0,0,0.4)}
-#qrBox img{width:100%;height:100%;object-fit:contain}
-.spin-wrap{display:flex;flex-direction:column;align-items:center;gap:10px;color:var(--sub);font-size:.85em}
-.spinner{width:40px;height:40px;border:3px solid #1e3050;border-top-color:var(--green);border-radius:50%;animation:spin .8s linear infinite}
-@keyframes spin{to{transform:rotate(360deg)}}
-.badge{display:inline-flex;align-items:center;gap:7px;padding:7px 16px;border-radius:50px;font-size:.82em;font-weight:700;margin-bottom:18px}
 .badge.waiting{background:rgba(37,211,102,.1);border:1px solid rgba(37,211,102,.3);color:var(--green)}
 .badge.connected{background:rgba(37,211,102,.15);border:1px solid var(--green);color:var(--green)}
 .badge.disconnected{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);color:var(--red)}
@@ -200,16 +188,24 @@ tbody tr:hover{background:rgba(255,255,255,.03)}
 .filter-sel{background:var(--card2);border:1px solid var(--border);color:var(--text);padding:9px 12px;border-radius:10px;font-family:inherit;font-size:.85em;outline:none}
 .filter-check{display:flex;align-items:center;gap:8px;font-size:.82em;color:var(--sub);cursor:pointer;user-select:none}
 /* Interactive table elements */
-.copyable{cursor:pointer;position:relative;display:inline-flex;align-items:center;gap:6px;transition:.2s}
-.copyable:hover{color:var(--green)}
-.copyable:after{content:'\f0c5';font-family:'Font Awesome 5 Free';font-weight:400;font-size:.8em;opacity:0;transition:.2s}
-.copyable:hover:after{opacity:.5}
-.dot-sent{width:8px;height:8px;border-radius:50%;background:var(--green);display:inline-block;margin-right:6px;box-shadow:0 0 6px var(--green)}
-.dot-fail{width:8px;height:8px;border-radius:50%;background:var(--red);display:inline-block;margin-right:6px;box-shadow:0 0 6px var(--red)}
-.dot-in{width:8px;height:8px;border-radius:50%;background:#3b82f6;display:inline-block;margin-right:6px;box-shadow:0 0 6px #3b82f6}
-.act-btn{background:transparent;border:1px solid var(--border);color:var(--sub);padding:5px 8px;border-radius:6px;cursor:pointer;font-size:.8em;transition:.2s}
-.act-btn:hover{border-color:var(--green);color:var(--green)}
-.act-btn.del:hover{border-color:var(--red);color:var(--red)}
+/* ── SIDEBAR LAYOUT ── */
+.sidebar { width: 240px; background: #0f172a; color: #fff; display: flex; flex-direction: column; height: 100vh; position: fixed; left: 0; top: 0; z-index: 200; padding: 20px 0; }
+.sidebar-logo { padding: 0 25px 30px; font-size: 1.4em; font-weight: 800; color: #fff; display: flex; align-items: center; gap: 10px; }
+.nav-item { padding: 14px 25px; cursor: pointer; display: flex; align-items: center; gap: 12px; color: #94a3b8; font-size: 0.9em; font-weight: 600; transition: 0.2s; border-left: 3px solid transparent; }
+.nav-item:hover { background: rgba(255,255,255,0.05); color: #fff; }
+.nav-item.active { background: rgba(255,255,255,0.08); color: #25D366; border-left-color: #25D366; }
+.nav-item i { width: 20px; font-size: 1.1em; }
+
+.main-content { margin-left: 240px; min-height: 100vh; display: flex; flex-direction: column; }
+.top-header { height: 64px; background: var(--card); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; padding: 0 30px; position: sticky; top: 0; z-index: 100; }
+.view-container { display: none; padding: 30px; flex: 1; }
+.view-container.active { display: block; }
+
+/* Existing modified/new styles */
+.acc-card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 20px; display: flex; flex-direction: column; gap: 12px; }
+.acc-status { display: flex; align-items: center; gap: 6px; font-size: 0.8em; font-weight: 700; }
+.acc-qr { width: 100%; aspect-ratio: 1; background: #fff; border-radius: 12px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.acc-qr img { width: 100%; height: 100%; object-fit: contain; }
 
 /* Modal */
 .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);backdrop-filter:blur(5px);z-index:3000;align-items:center;justify-content:center;padding:20px}
@@ -490,7 +486,6 @@ Formats accepted:
       <button class="btn-stop" id="stopBtn" onclick="stopCampaign()">
         <i class="fas fa-stop" style="margin-right:8px"></i>Stop Campaign
       </button>
-
       <!-- Activity Log -->
       <h3 style="margin-top:4px"><i class="fas fa-terminal"></i>Activity Log</h3>
       <div id="logBox"><div class="log-line info">Campaign log will appear here...</div></div>
@@ -657,57 +652,115 @@ https://chat.whatsapp.com/CqXROPWSrIH5b5wQ0oKfjI`
 ];
 
 // ── QR Polling ───────────────────────────────────────────────────────────────
-async function pollQR() {
-  try {
-    const r    = await fetch(`${API}/api/qr`, { headers: apiHeaders() });
-    if (r.status === 401) { localStorage.removeItem('wa_token'); location.reload(); return; }
-    const data = await r.json();
-    const badge = document.getElementById('statusBadge');
-    const txt   = document.getElementById('statusTxt');
+// ── Auth & Init ──────────────────────────────────────────────────────────────
+let accounts = [];
+let selectedView = 'overview';
 
-    if (data.status === 'connected') {
-      document.getElementById('successEl').style.display = 'flex';
-      document.getElementById('spinEl').style.display    = 'none';
-      document.getElementById('qrBox').style.display     = 'none';
-      badge.className = 'badge connected';
-      txt.textContent = 'Connected ✓';
-      clearInterval(pollT);
-      setTimeout(showDash, 1800);
-      return;
-    }
-
-    if (data.qr) {
-      document.getElementById('spinEl').style.display = 'none';
-      let img = document.getElementById('qrBox').querySelector('img');
-      if (!img) { img = document.createElement('img'); document.getElementById('qrBox').appendChild(img); }
-      img.src = data.qr;
-      badge.className = 'badge waiting';
-      txt.textContent = 'Scan with WhatsApp...';
-    } else {
-      badge.className = 'badge ' + (data.status === 'disconnected' ? 'disconnected' : 'waiting');
-      txt.textContent = data.status === 'disconnected' ? 'Disconnected — reconnecting...' : 'Generating QR...';
-    }
-  } catch {
-    document.getElementById('statusBadge').className = 'badge disconnected';
-    document.getElementById('statusTxt').textContent = 'Server offline — start npm start';
+function checkAuth(){
+  const t = localStorage.getItem('wa_token');
+  if(!t){
+    document.getElementById('loginPage').style.display='flex';
+    document.getElementById('dashboard').style.display='none';
+  } else {
+    document.getElementById('loginPage').style.display='none';
+    document.getElementById('dashboard').style.display='flex';
+    if(userName) document.getElementById('userName').textContent = userName;
+    initDash();
   }
 }
 
-function showDash(){
-  document.getElementById('qrPage').style.display='none';
-  document.getElementById('dashPage').style.display='flex';
-  if(userName) document.getElementById('userNameBadge').textContent='👤 '+userName;
-  initDash();
+function switchView(view){
+  selectedView = view;
+  document.querySelectorAll('.view-container').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(v => v.classList.remove('active'));
+  
+  document.getElementById(`view-${view}`).classList.add('active');
+  document.querySelector(`.nav-item[onclick="switchView('${view}')"]`).classList.add('active');
+  document.getElementById('viewTitle').textContent = view.charAt(0).toUpperCase() + view.slice(1);
+  
+  if(view === 'accounts') loadAccounts();
+  if(view === 'inbox') loadInbox();
+  if(view === 'history') loadHistory();
+  if(view === 'campaign') renderAccSelection();
 }
-async function resetSession(){
-  if(!confirm('This will disconnect your WhatsApp account and delete the session. Continue?')) return;
-  try{
-    await fetch(`${API}/api/reset`,{method:'POST',headers:apiHeaders()});
-    location.reload();
-  }catch{alert('❌ Failed to reset');}
-}
+
 function initDash(){
-  statusT=setInterval(pollStatus,2000);
+  statusT = setInterval(pollStatus, 2000);
+  loadAccounts();
+}
+
+// ── Accounts Management ──────────────────────────────────────────────────────
+async function loadAccounts(){
+  try {
+    const r = await fetch(`${API}/api/accounts`, { headers: apiHeaders() });
+    accounts = await r.json();
+    renderAccounts();
+    renderAccSelection();
+  } catch(e){ console.error('Failed to load accounts'); }
+}
+
+function renderAccounts(){
+  const list = document.getElementById('accountsList');
+  if(!list) return;
+  list.innerHTML = accounts.map(a => `
+    <div class="acc-card">
+      <div style="display:flex;justify-content:space-between;align-items:start">
+        <h4 style="margin:0">${a.name}</h4>
+        <button class="act-btn del" onclick="deleteAccount('${a.id}')"><i class="fas fa-trash"></i></button>
+      </div>
+      <div class="acc-status">
+        <span class="pulse" style="color:${a.botStatus==='connected'?'var(--green)':'var(--red)'}"></span>
+        ${a.botStatus==='connected'?'Active':'Waiting for Link'}
+      </div>
+      ${a.botStatus !== 'connected' ? `
+        <div class="acc-qr" id="qr-${a.id}">
+          <div class="spinner"></div>
+        </div>
+      ` : `<div style="text-align:center;padding:20px;color:var(--green)"><i class="fas fa-check-circle" style="font-size:3em"></i><p style="margin-top:10px">Linked</p></div>`}
+      <p style="font-size:0.7em;color:var(--sub)">ID: ${a.id}</p>
+    </div>
+  `).join('');
+  
+  accounts.forEach(a => {
+    if(a.botStatus !== 'connected') pollAccountQR(a.id);
+  });
+}
+
+async function pollAccountQR(accId){
+  if(selectedView !== 'accounts') return;
+  try {
+    const r = await fetch(`${API}/api/accounts/qr?accountId=${accId}`, { headers: apiHeaders() });
+    const data = await r.json();
+    const box = document.getElementById(`qr-${accId}`);
+    if(!box) return;
+    
+    if(data.qr){
+      box.innerHTML = `<img src="${data.qr}">`;
+    } else if(data.status === 'connected'){
+      loadAccounts();
+    }
+  } catch(e){}
+}
+
+async function addAccount(){
+  const name = prompt('Enter account name (e.g. Sales Account 1):');
+  if(!name) return;
+  try {
+    await fetch(`${API}/api/accounts/add`, {
+      method:'POST', headers:apiHeaders(), body:JSON.stringify({name})
+    });
+    loadAccounts();
+  } catch(e){ alert('Failed to add'); }
+}
+
+async function deleteAccount(accId){
+  if(!confirm('Delete this account and all sessions?')) return;
+  try {
+    await fetch(`${API}/api/accounts/delete`, {
+      method:'POST', headers:apiHeaders(), body:JSON.stringify({accountId:accId})
+    });
+    loadAccounts();
+  } catch(e){ alert('Failed to delete'); }
 }
 
 // ── Input method tabs ────────────────────────────────────────────────────────
@@ -732,6 +785,68 @@ function parsePasted(){
   showNumPreview();
   if(!numbers.length) alert('No valid phone numbers found. Make sure numbers are 10-15 digits.');
 }
+
+function renderAccSelection(){
+  const grid = document.getElementById('accSelectGrid');
+  if(!grid) return;
+  const activeAccs = accounts.filter(a => a.botStatus === 'connected');
+  if(!activeAccs.length){
+    grid.innerHTML = '<p style="color:var(--red);font-size:0.8em;grid-column:1/-1">No active accounts. Connect at least one first.</p>';
+    return;
+  }
+  grid.innerHTML = activeAccs.map(a => `
+    <label class="stat-card" style="cursor:pointer;padding:10px;display:block">
+      <input type="checkbox" class="acc-sel-cb" value="${a.id}" checked>
+      <div style="font-size:0.8em;font-weight:700">${a.name}</div>
+    </label>
+  `).join('');
+}
+
+async function startBulk(){
+  if(!numbers.length){ alert('No contacts loaded'); return; }
+  const msgs = getMsgs();
+  if(!msgs.length){ alert('Add at least one message variant'); return; }
+  const selectedAccs = [...document.querySelectorAll('.acc-sel-cb:checked')].map(cb => cb.value);
+  if(!selectedAccs.length){ alert('Select at least one WhatsApp account'); return; }
+
+  try {
+    const r = await fetch(`${API}/api/bulk/start`, {
+      method:'POST', headers:apiHeaders(),
+      body:JSON.stringify({ numbers, messages:msgs, accountIds:selectedAccs })
+    });
+    const d = await r.json();
+    if(d.success) switchView('overview');
+    else alert(d.error || 'Failed to start');
+  } catch(e){ alert('Server error'); }
+}
+
+async function stopBulk(){
+  try {
+    await fetch(`${API}/api/bulk/stop`, { method:'POST', headers:apiHeaders() });
+  } catch(e){}
+}
+
+async function loadInbox(){
+  try {
+    const r = await fetch(`${API}/api/inbox`, { headers: apiHeaders() });
+    const data = await r.json();
+    const tbody = document.getElementById('inboxBody');
+    if(!data.length){
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:40px;color:var(--sub)">No messages received yet.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = data.map(m => `
+      <tr>
+        <td>+${m.number}</td>
+        <td style="max-width:300px">${m.message}</td>
+        <td><span class="badge connected" style="font-size:0.7em">${m.accId ? m.accId.slice(0,4) : 'N/A'}</span></td>
+        <td style="color:var(--sub);font-size:0.8em">${new Date(m.sentAt).toLocaleString()}</td>
+        <td><button class="act-btn" onclick="openChat('${m.number}')">Reply</button></td>
+      </tr>
+    `).join('');
+  } catch(e){}
+}
+
 function handleExcel(input) {
   const file = input.files[0];
   if (!file) return;
@@ -964,17 +1079,11 @@ function updateHistoryView(){
       const msg=h.message?h.message.replace(/</g,'&lt;').replace(/>/g,'&gt;'):'';
       return `<tr>
         <td><input type="checkbox" class="row-check" value="${h.sentAt}"></td>
-        <td style="color:var(--sub)">${i+1}</td>
         <td><span class="copyable" onclick="copyToClipboard('${h.number}')"><span class="${dot}"></span>+${h.number}</span></td>
         <td style="max-width:300px">${msg}</td>
         <td>${badge}</td>
-        <td style="color:var(--sub);white-space:nowrap">${dt}</td>
-        <td style="text-align:right">
-          <div style="display:flex;gap:6px;justify-content:flex-end">
-            <button class="act-btn" onclick="openChat('${h.number}')" title="Open Chat"><i class="fas fa-comments"></i></button>
-            <button class="act-btn del" onclick="deleteSelected(['${h.sentAt}'])" title="Delete record"><i class="fas fa-trash"></i></button>
-          </div>
-        </td>
+        <td><span class="badge connected" style="font-size:0.7em">${h.accId?h.accId.slice(0,4):'N/A'}</span></td>
+        <td style="color:var(--sub);font-size:0.85em;white-space:nowrap">${dt}</td>
       </tr>`;
     }).join('');
     const sent=filtered.filter(h=>h.status==='sent').length;

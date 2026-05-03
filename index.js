@@ -7,10 +7,11 @@ const fs     = require('fs');
 const path   = require('path');
 const crypto = require('crypto');
 
-const PORT        = process.env.PORT || 3000;
-const SELF_URL    = process.env.RENDER_EXTERNAL_URL || '';
-const DATA_DIR     = process.env.DATA_DIR || __dirname;
+const PORT          = process.env.PORT || 3000;
+const SELF_URL      = process.env.RENDER_EXTERNAL_URL || '';
+const DATA_DIR      = process.env.DATA_DIR || __dirname;
 const USERS_FILE    = path.join(DATA_DIR, 'users.json');
+const ACCOUNTS_FILE = path.join(DATA_DIR, 'accounts.json');
 const HISTORY_DIR   = path.join(DATA_DIR, 'history');
 const SESSION_DIR   = path.join(DATA_DIR, 'sessions');
 const CAMPAIGN_DIR  = path.join(DATA_DIR, 'campaigns');
@@ -18,12 +19,20 @@ const CAMPAIGN_DIR  = path.join(DATA_DIR, 'campaigns');
 // Ensure dirs exist
 [HISTORY_DIR, SESSION_DIR, CAMPAIGN_DIR].forEach(d => { if(!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true }); });
 
-// ── Per-user bot instances ────────────────────────────────────────────────────
-// bots Map: userId → { sock, status, qr, reconnDelay, reconnTimer }
+// ── Multi-Account Bot instances ──────────────────────────────────────────────
+// bots Map: accountId → { sock, status, qr, reconnDelay, reconnTimer, userId }
 const bots = new Map();
 
-// ── Active auth sessions: token → { userId, name, email } ────────────────────
+// ── Active auth sessions: token → { userId, name, email, role } ──────────────
+// Roles: 'superadmin', 'admin', 'manager', 'agent'
 const sessions = new Map();
+
+const ROLES = {
+    SUPERADMIN: 'superadmin',
+    ADMIN:      'admin',
+    MANAGER:    'manager',
+    AGENT:      'agent'
+};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const hash  = s => crypto.createHash('sha256').update(s).digest('hex');
@@ -44,19 +53,28 @@ function parseBody(req) {
 function loadJSON(file, def) { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return def; } }
 function saveJSON(file, data) { try { fs.writeFileSync(file, JSON.stringify(data, null, 2)); } catch {} }
 
-const loadUsers = () => loadJSON(USERS_FILE, []);
-const saveUsers = d  => saveJSON(USERS_FILE, d);
+const loadUsers    = () => loadJSON(USERS_FILE, []);
+const saveUsers    = d  => saveJSON(USERS_FILE, d);
+const loadAccounts = () => loadJSON(ACCOUNTS_FILE, []);
+const saveAccounts = d  => saveJSON(ACCOUNTS_FILE, d);
 
-function userHistoryFile(userId) { return path.join(HISTORY_DIR, `${userId}.json`); }
-function userCampaignFile(userId){ return path.join(CAMPAIGN_DIR, `${userId}.json`); }
-function userSessionDir(userId)  { return path.join(SESSION_DIR,  userId); }
+function userHistoryFile(userId)  { return path.join(HISTORY_DIR, `${userId}.json`); }
+function userCampaignFile(userId) { return path.join(CAMPAIGN_DIR, `${userId}.json`); }
+function accountSessionDir(accId) { return path.join(SESSION_DIR, accId); }
 
-function addHistoryRecord(userId, number, message, status) {
+function hasPermission(role, requiredRole) {
+    const weights = { [ROLES.SUPERADMIN]: 4, [ROLES.ADMIN]: 3, [ROLES.MANAGER]: 2, [ROLES.AGENT]: 1 };
+    return weights[role] >= weights[requiredRole];
+}
+
+function addHistoryRecord(userId, number, message, status, accId = 'default') {
     const file = userHistoryFile(userId);
     const hist = loadJSON(file, []);
-    hist.push({ id: Date.now().toString(36), userId, number, message, status, sentAt: new Date().toISOString() });
+    hist.push({ 
+        id: Date.now().toString(36), userId, number, message, status, 
+        sentAt: new Date().toISOString(), accId 
+    });
     saveJSON(file, hist);
-    // Notify campaign of update
     const c = getOrCreateCampaign(userId);
     c.lastUpdate = Date.now();
 }
@@ -68,11 +86,13 @@ function getOrCreateCampaign(userId) {
     if (!campaigns.has(userId)) {
         campaigns.set(userId, {
             running:false, numbers:[], messages:[], currentIndex:0,
-            intervalMs:600000, timer:null, log:[], totalSent:0,
+            intervalMs:15000, timer:null, log:[], totalSent:0,
             totalFailed:0, startTime:null, userId,
             autoReplyEnabled: false, autoReplyText: "",
-            keywords: [], // [{key: "hi", val: "hello there"}]
-            nextRunAt: 0, remainingMs: 0
+            keywords: [], 
+            nextRunAt: 0, remainingMs: 0,
+            selectedAccounts: [], // [accId1, accId2]
+            currentAccountIdx: 0
         });
     }
     return campaigns.get(userId);
@@ -99,7 +119,9 @@ function saveCampaignState(userId) {
         autoReplyText: c.autoReplyText,
         keywords: c.keywords || [],
         nextRunAt: c.nextRunAt,
-        remainingMs: c.remainingMs
+        remainingMs: c.remainingMs,
+        selectedAccounts: c.selectedAccounts || [],
+        currentAccountIdx: c.currentAccountIdx || 0
     });
 }
 
@@ -127,52 +149,52 @@ function loadCampaignState(userId) {
 
 // ── Bulk sender ───────────────────────────────────────────────────────────────
 async function sendNext(userId) {
-    const c   = getOrCreateCampaign(userId);
-    const bot = bots.get(userId);
+    const c = getOrCreateCampaign(userId);
     if (!c.running) return;
 
     if (c.currentIndex >= c.numbers.length) {
-        c.running = false;
-        addLog(userId, `🎉 Done! ✅${c.totalSent} sent  ❌${c.totalFailed} failed`);
+        c.running = false; c.timer = null;
+        c.nextRunAt = 0; c.remainingMs = 0;
+        addLog(userId, `🎉 Campaign Complete! ✅${c.totalSent} ❌${c.totalFailed}`);
         try { fs.unlinkSync(userCampaignFile(userId)); } catch {}
         return;
     }
 
-    if (!bot || bot.status !== 'connected' || !bot.sock) {
-        addLog(userId, '⚠️ WhatsApp offline — retrying in 30s...');
-        scheduleNext(userId, 30000);
-        return;
+    if (!c.selectedAccounts?.length) {
+        addLog(userId, '❌ Error: No accounts selected for campaign');
+        c.running = false; return;
     }
 
-    const raw = String(c.numbers[c.currentIndex]).replace(/\D/g, '');
-    const jid = (raw.length === 10 ? '91' + raw : raw) + '@s.whatsapp.net';
-    const pool = c.messages.filter(m => m && m.trim());
-    const msg  = pool[Math.floor(Math.random() * pool.length)] || 'Hello!';
-    const idx  = c.currentIndex + 1;
-    c.currentIndex++;
+    // Round-robin account selection
+    const accId = c.selectedAccounts[c.currentAccountIdx % c.selectedAccounts.length];
+    c.currentAccountIdx++;
+
+    const num = String(c.numbers[c.currentIndex]).replace(/\D/g, '');
+    const jid = (num.length === 10 ? '91' + num : num) + '@s.whatsapp.net';
+    const msg = c.messages[Math.floor(Math.random() * c.messages.length)];
+    const idx = c.currentIndex + 1;
 
     try {
-        await bot.sock.sendMessage(jid, { text: msg });
+        await sendMessageSafe(userId, accId, jid, msg);
         c.totalSent++;
-        addLog(userId, `✅ [${idx}/${c.numbers.length}] Sent → +${raw}`);
-        addHistoryRecord(userId, raw, msg, 'sent');
-    } catch {
+        addLog(userId, `✅ [${idx}/${c.numbers.length}] Sent via Acc:${accId.slice(0,4)} → +${num}`);
+        addHistoryRecord(userId, num, msg, 'sent', accId);
+    } catch (e) {
         c.totalFailed++;
-        addLog(userId, `❌ [${idx}/${c.numbers.length}] Failed → +${raw}`);
-        addHistoryRecord(userId, raw, msg, 'failed');
+        addLog(userId, `❌ [${idx}/${c.numbers.length}] Fail (Acc:${accId.slice(0,4)}): ${e.message}`);
+        addHistoryRecord(userId, num, msg, 'failed', accId);
     }
 
+    c.currentIndex++;
     saveCampaignState(userId);
 
     if (c.currentIndex < c.numbers.length && c.running) {
-        addLog(userId, `⏱️ Next in ${Math.round(c.intervalMs / 60000)} min...`);
-        scheduleNext(userId, c.intervalMs);
+        // Anti-ban: Random delay between 5-15 seconds
+        const delay = 5000 + Math.random() * 10000;
+        scheduleNext(userId, delay);
     } else if (c.running) {
-        c.timer = null;
-        c.nextRunAt = 0;
-        c.remainingMs = 0;
-        addLog(userId, `🎉 All done! ✅${c.totalSent}  ❌${c.totalFailed}`);
-        try { fs.unlinkSync(userCampaignFile(userId)); } catch {}
+        c.running = false; c.timer = null;
+        addLog(userId, `🏁 All done! ✅${c.totalSent} ❌${c.totalFailed}`);
     }
 }
 
@@ -187,12 +209,16 @@ async function sendDirect(userId, to, text) {
 }
 
 // ── Per-user WhatsApp bot ─────────────────────────────────────────────────────
-async function startBotForUser(userId) {
-    let bot = bots.get(userId);
-    if (!bot) { bot = { sock:null, status:'waiting', qr:null, reconnDelay:3000, reconnTimer:null, userId }; bots.set(userId, bot); }
+// ── Per-account WhatsApp bot ──────────────────────────────────────────────────
+async function startBotForAccount(userId, accId) {
+    let bot = bots.get(accId);
+    if (!bot) { 
+        bot = { sock:null, status:'waiting', qr:null, reconnDelay:3000, reconnTimer:null, userId, accId }; 
+        bots.set(accId, bot); 
+    }
 
     try {
-        const sessDir = userSessionDir(userId);
+        const sessDir = accountSessionDir(accId);
         fs.mkdirSync(sessDir, { recursive: true });
 
         const { state, saveCreds } = await useMultiFileAuthState(sessDir);
@@ -201,34 +227,36 @@ async function startBotForUser(userId) {
         bot.sock = makeWASocket({
             version, auth: state, printQRInTerminal: false,
             logger: pino({ level: 'silent' }),
-            browser: ['Chrome (Linux)', '', '']
+            browser: ['CRM System', 'Chrome', '1.0.0'],
+            syncFullHistory: false
         });
 
         bot.sock.ev.on('connection.update', update => {
             const { connection, lastDisconnect, qr } = update;
             if (qr) { 
-                bot.qr = qr; bot.status = 'waiting'; bot.reconnDelay = 3000; 
-                if (!bot.lastQrLog || Date.now() - bot.lastQrLog > 60000) {
-                    console.log(`📱 QR for ${userId.slice(0,6)}...`); 
-                    bot.lastQrLog = Date.now();
-                }
+                bot.qr = qr; bot.status = 'waiting'; 
+                console.log(`📱 QR for Account ${accId.slice(0,6)}...`); 
             }
             if (connection === 'open') {
                 bot.qr = null; bot.status = 'connected'; bot.reconnDelay = 3000;
-                console.log(`✅ WA connected for ${userId.slice(0,6)}`);
-                const c = getOrCreateCampaign(userId);
-                if (c.running && c.currentIndex < c.numbers.length && !c.timer) {
-                    addLog(userId, '🔗 WhatsApp reconnected — resuming campaign...');
-                    scheduleNext(userId, 3000);
-                }
+                console.log(`✅ WA connected for Account ${accId.slice(0,6)}`);
+                const accounts = loadAccounts();
+                const acc = accounts.find(a => a.id === accId);
+                if (acc) { acc.status = 'active'; saveAccounts(accounts); }
             }
             if (connection === 'close') {
                 const code = lastDisconnect?.error?.output?.statusCode;
                 bot.status = 'disconnected'; bot.sock = null;
-                if (code === DisconnectReason.loggedOut) { bot.qr = null; console.log(`🚪 Logout: ${userId.slice(0,6)}`); return; }
+                const accounts = loadAccounts();
+                const acc = accounts.find(a => a.id === accId);
+                if (acc && code === DisconnectReason.loggedOut) { 
+                    acc.status = 'logged_out'; saveAccounts(accounts); 
+                    console.log(`🚪 Logout: Account ${accId.slice(0,6)}`); 
+                    return; 
+                }
                 bot.reconnDelay = Math.min(bot.reconnDelay * 1.5, 30000);
                 if (bot.reconnTimer) clearTimeout(bot.reconnTimer);
-                bot.reconnTimer = setTimeout(() => startBotForUser(userId), bot.reconnDelay);
+                bot.reconnTimer = setTimeout(() => startBotForAccount(userId, accId), bot.reconnDelay);
             }
         });
         bot.sock.ev.on('creds.update', saveCreds);
@@ -236,54 +264,46 @@ async function startBotForUser(userId) {
         bot.sock.ev.on('messages.upsert', async m => {
             if (m.type !== 'notify') return;
             for (const msg of m.messages) {
-                if (!msg.message) continue;
-                const c = getOrCreateCampaign(userId);
-                const mObj = msg.message;
-                const incoming = (
-                    mObj.conversation || 
-                    mObj.extendedTextMessage?.text || 
-                    mObj.imageMessage?.caption || 
-                    mObj.videoMessage?.caption || 
-                    (mObj.imageMessage ? '📷 [Image]' : '') ||
-                    (mObj.videoMessage ? '🎥 [Video]' : '') ||
-                    (mObj.documentMessage ? '📄 [Document]' : '') ||
-                    (mObj.audioMessage ? '🎵 [Audio]' : '') ||
-                    ''
-                ).trim();
-                
+                if (!msg.message || msg.key.fromMe) continue;
                 const jid = msg.key.remoteJid;
                 if (!jid || !jid.endsWith('@s.whatsapp.net')) continue;
+                
                 const remoteNum = jid.split('@')[0];
-
-                if (msg.key.fromMe) {
-                    addHistoryRecord(userId, remoteNum, incoming, 'sent');
-                    console.log(`[${userId.slice(0,4)}] 📤 Sent from phone: ${incoming.slice(0,20)}...`);
-                    continue; 
-                }
-
-                addHistoryRecord(userId, remoteNum, incoming, 'received');
-                addLog(userId, `📩 New message from +${remoteNum}`);
-                console.log(`[${userId.slice(0,4)}] 📥 Received reply from +${remoteNum}: ${incoming.slice(0,20)}...`);
-
-                if (!c.autoReplyEnabled) continue;
-                let match = (c.keywords || []).find(k => k.key && incoming.toLowerCase().includes(k.key.toLowerCase().trim()));
-                let replyText = match ? match.val : c.autoReplyText;
-
-                if (replyText) {
-                    try {
-                        await bot.sock.sendMessage(jid, { text: replyText }, { quoted: msg });
-                        addLog(userId, `🤖 Replied to +${remoteNum}${match ? ` (Keyword: ${match.key})` : ''}`);
-                    } catch (e) { console.error('Reply fail:', e.message); }
-                }
+                const incoming = (msg.message.conversation || msg.message.extendedTextMessage?.text || '').trim();
+                
+                addHistoryRecord(userId, remoteNum, incoming, 'received', accId);
+                addLog(userId, `📩 Reply on Account ${accId.slice(0,4)} from +${remoteNum}`);
             }
         });
     } catch (err) {
-        console.error(`Bot error ${userId.slice(0,6)}:`, err.message);
-        if (!bot) return;
-        bot.reconnDelay = Math.min(bot.reconnDelay * 1.5, 30000);
-        if (bot.reconnTimer) clearTimeout(bot.reconnTimer);
-        bot.reconnTimer = setTimeout(() => startBotForUser(userId), bot.reconnDelay);
+        console.error(`Bot error Account ${accId}:`, err.message);
+        bot.reconnTimer = setTimeout(() => startBotForAccount(userId, accId), 5000);
     }
+}
+
+async function sendMessageSafe(userId, accId, jid, content, options = {}) {
+    const bot = bots.get(accId);
+    if (!bot || bot.status !== 'connected') throw new Error('Account not connected');
+
+    // Anti-ban: Typing simulation
+    await bot.sock.presenceSubscribe(jid);
+    await bot.sock.sendPresenceUpdate('composing', jid);
+    await new Promise(r => setTimeout(r, 2000 + Math.random() * 3000));
+    await bot.sock.sendPresenceUpdate('paused', jid);
+
+    let msgData = {};
+    if (typeof content === 'string') {
+        msgData = { text: content };
+    } else if (content.image) {
+        msgData = { image: content.image, caption: content.caption };
+    } else if (content.video) {
+        msgData = { video: content.video, caption: content.caption };
+    } else if (content.document) {
+        msgData = { document: content.document, fileName: content.fileName, caption: content.caption };
+    }
+
+    const sent = await bot.sock.sendMessage(jid, msgData, options);
+    return sent;
 }
 
 // ── Keep-alive ────────────────────────────────────────────────────────────────
@@ -370,16 +390,71 @@ const server = http.createServer(async (req, res) => {
     if (!me) return json(res, { error: 'Unauthorized' }, 401);
     const { userId } = me;
 
-    // GET /api/qr — user's own QR
-    if (req.method === 'GET' && url === '/api/qr') {
-        const bot = bots.get(userId);
+    // ── Accounts ─────────────────────────────────────────────────────────────
+    // GET /api/accounts
+    if (req.method === 'GET' && url === '/api/accounts') {
+        const accounts = loadAccounts().filter(a => a.userId === userId || userId === 'admin');
+        const list = accounts.map(a => {
+            const bot = bots.get(a.id);
+            return { ...a, botStatus: bot ? bot.status : 'waiting' };
+        });
+        return json(res, list);
+    }
+
+    // POST /api/accounts/add
+    if (req.method === 'POST' && url === '/api/accounts/add') {
+        const { name } = await parseBody(req);
+        const accounts = loadAccounts();
+        const acc = { id: mkTok().slice(0,8), name: name || 'Account', userId, status: 'waiting', createdAt: new Date().toISOString() };
+        accounts.push(acc);
+        saveAccounts(accounts);
+        startBotForAccount(userId, acc.id);
+        return json(res, { success: true, accountId: acc.id });
+    }
+
+    // DELETE /api/accounts/delete
+    if (req.method === 'POST' && url === '/api/accounts/delete') {
+        const { accountId } = await parseBody(req);
+        let accounts = loadAccounts();
+        accounts = accounts.filter(a => a.id !== accountId);
+        saveAccounts(accounts);
+        const bot = bots.get(accountId);
+        if (bot && bot.sock) bot.sock.logout();
+        bots.delete(accountId);
+        fs.rmSync(accountSessionDir(accountId), { recursive: true, force: true });
+        return json(res, { success: true });
+    }
+
+    // GET /api/accounts/qr
+    if (req.method === 'GET' && url === '/api/accounts/qr') {
+        const { accountId } = Object.fromEntries(new URL(req.url, `http://${req.headers.host}`).searchParams);
+        const bot = bots.get(accountId);
         if (!bot) return json(res, { status: 'waiting', qr: null });
         if (bot.status === 'connected') return json(res, { status: 'connected', qr: null });
         if (bot.qr) {
-            try {
-                const img = await QRCode.toDataURL(bot.qr, { width: 280, margin: 2 });
-                return json(res, { status: bot.status, qr: img });
-            } catch { return json(res, { status: bot.status, qr: null }); }
+            const img = await QRCode.toDataURL(bot.qr, { width: 280, margin: 2 });
+            return json(res, { status: bot.status, qr: img });
+        }
+        return json(res, { status: bot.status || 'waiting', qr: null });
+    }
+
+    // GET /api/inbox
+    if (req.method === 'GET' && url === '/api/inbox') {
+        const hist = loadJSON(userHistoryFile(userId), []);
+        const inbox = hist.filter(h => h.status === 'received').reverse();
+        return json(res, inbox);
+    }
+
+    // GET /api/qr — legacy support
+    if (req.method === 'GET' && url === '/api/qr') {
+        const userAccs = loadAccounts().filter(a => a.userId === userId);
+        if (!userAccs.length) return json(res, { status: 'waiting', qr: null });
+        const bot = bots.get(userAccs[0].id);
+        if (!bot) return json(res, { status: 'waiting', qr: null });
+        if (bot.status === 'connected') return json(res, { status: 'connected', qr: null });
+        if (bot.qr) {
+            const img = await QRCode.toDataURL(bot.qr, { width: 280, margin: 2 });
+            return json(res, { status: bot.status, qr: img });
         }
         return json(res, { status: bot.status || 'waiting', qr: null });
     }
@@ -492,19 +567,21 @@ const server = http.createServer(async (req, res) => {
         return json(res, { success:true });
     }
 
-    res.writeHead(404); res.end('Not found');
-});
+    res.writeHead(404);
+    res.end('Not found');
+};
 
-server.listen(PORT, () => {
-    console.log(`\n✅ Server → http://localhost:${PORT}\n`);
-    startKeepAlive();
-    // Only resume bots for users who are ALREADY linked (session exists)
-    const users = loadUsers();
-    users.forEach(u => {
-        const credsFile = path.join(userSessionDir(u.id), 'creds.json');
-        if (fs.existsSync(credsFile)) {
-            startBotForUser(u.id);
-            setTimeout(() => loadCampaignState(u.id), 8000);
+async function boot() {
+    const accounts = loadAccounts();
+    console.log(`🚀 Booting System: Found ${accounts.length} accounts`);
+    for (const acc of accounts) {
+        if (acc.status === 'active') {
+            await startBotForAccount(acc.userId, acc.id);
         }
-    });
-});
+    }
+}
+
+boot();
+
+const server = http.createServer(app);
+server.listen(PORT, () => console.log(`🚀 CRM Server running on port ${PORT}`));
