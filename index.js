@@ -169,18 +169,20 @@ async function processV2Campaign(campId) {
 
     const targetAcc = activeAccs[c.currentIndex % activeAccs.length];
     const contact = c.contacts[c.currentIndex];
-    const jid = String(contact.number).replace(/\D/g, '') + '@s.whatsapp.net';
+    let cleanNum = String(contact.number).replace(/\D/g, '');
+    if (cleanNum.length === 10) cleanNum = '91' + cleanNum;
+    const jid = cleanNum + '@s.whatsapp.net';
     const message = c.template.replace(/{name}/g, contact.name || 'Friend');
 
-    console.log(`[CAMPAIGN] Sending message ${c.currentIndex + 1}/${c.contacts.length} to ${contact.number} using ${targetAcc.name}`);
+    console.log(`[CAMPAIGN] Sending message ${c.currentIndex + 1}/${c.contacts.length} to ${cleanNum} using ${targetAcc.name}`);
 
     try {
         const bot = bots.get(targetAcc.id);
         if (bot && bot.sock && bot.status === 'active') {
             await bot.sock.sendMessage(jid, { text: message });
             c.sentCount++;
-            await new History({ id: mkId(), num: contact.number, msg: message, status: 'sent', accId: targetAcc.id, campName: c.name, userId: c.createdBy }).save();
-            console.log(`[CAMPAIGN] Message sent to ${contact.number}`);
+            await new History({ id: mkId(), num: cleanNum, msg: message, status: 'sent', accId: targetAcc.id, campName: c.name, userId: c.createdBy }).save();
+            console.log(`[CAMPAIGN] Message sent to ${cleanNum}`);
         } else {
             console.warn(`[CAMPAIGN] Bot ${targetAcc.name} went offline, retrying in 5s...`);
             const delay = 5000;
@@ -188,17 +190,17 @@ async function processV2Campaign(campId) {
             return;
         }
     } catch (e) {
-        console.error(`[CAMPAIGN] Failed to send message to ${contact.number}:`, e.message);
+        console.error(`[CAMPAIGN] Failed to send message to ${cleanNum}:`, e.message);
         c.failCount++;
-        await new History({ id: mkId(), num: contact.number, msg: message, status: 'failed', accId: targetAcc.id, campName: c.name, userId: c.createdBy }).save();
+        await new History({ id: mkId(), num: cleanNum, msg: message, status: 'failed', accId: targetAcc.id, campName: c.name, userId: c.createdBy }).save();
     }
 
     c.currentIndex++; 
     await c.save();
     
-    const minD = Number(c.minDelay) || 15;
-    const maxD = Number(c.maxDelay) || 45;
-    const delay = (minD + Math.random() * (maxD - minD)) * 1000;
+    const minD = parseInt(c.minDelay, 10) || 15;
+    const maxD = parseInt(c.maxDelay, 10) || 45;
+    const delay = Math.floor((minD + Math.random() * (maxD - minD)) * 1000);
     
     console.log(`[CAMPAIGN] Next message in ${Math.round(delay/1000)} seconds`);
     activeV2Jobs.set(campId, setTimeout(() => processV2Campaign(campId), delay));
