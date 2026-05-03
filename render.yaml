@@ -3,7 +3,7 @@ services:
     name: whatsapp-bulk-sender
     env: node
     plan: free
-    buildCommand: npm install
+    buildCommand: npm install -g pnpm && pnpm install
     startCommand: node index.js
     envVars:
       - key: NODE_VERSION
