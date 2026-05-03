@@ -71,7 +71,8 @@ function getOrCreateCampaign(userId) {
             intervalMs:600000, timer:null, log:[], totalSent:0,
             totalFailed:0, startTime:null, userId,
             autoReplyEnabled: false, autoReplyText: "",
-            keywords: [] // [{key: "hi", val: "hello there"}]
+            keywords: [], // [{key: "hi", val: "hello there"}]
+            nextRunAt: 0, remainingMs: 0
         });
     }
     return campaigns.get(userId);
@@ -96,14 +97,19 @@ function saveCampaignState(userId) {
         startTime:c.startTime, log:c.log.slice(0, 50),
         autoReplyEnabled: c.autoReplyEnabled,
         autoReplyText: c.autoReplyText,
-        keywords: c.keywords || []
+        keywords: c.keywords || [],
+        nextRunAt: c.nextRunAt,
+        remainingMs: c.remainingMs
     });
 }
 
 function scheduleNext(userId, delay) {
     const c = getOrCreateCampaign(userId);
     if (c.timer) clearTimeout(c.timer);
+    c.remainingMs = delay;
+    c.nextRunAt = Date.now() + delay;
     c.timer = setTimeout(() => sendNext(userId), delay);
+    saveCampaignState(userId);
 }
 
 function loadCampaignState(userId) {
@@ -113,7 +119,9 @@ function loadCampaignState(userId) {
     Object.assign(c, { ...s, timer: null });
     addLog(userId, `📂 Resuming: ${s.numbers.length - s.currentIndex} numbers remaining`);
     if (c.running) {
-        scheduleNext(userId, 10000); // wait for WA to connect
+        const now = Date.now();
+        const wait = Math.max(1000, c.nextRunAt - now);
+        scheduleNext(userId, wait);
     }
 }
 
@@ -160,8 +168,9 @@ async function sendNext(userId) {
         addLog(userId, `⏱️ Next in ${Math.round(c.intervalMs / 60000)} min...`);
         scheduleNext(userId, c.intervalMs);
     } else if (c.running) {
-        c.running = false;
         c.timer = null;
+        c.nextRunAt = 0;
+        c.remainingMs = 0;
         addLog(userId, `🎉 All done! ✅${c.totalSent}  ❌${c.totalFailed}`);
         try { fs.unlinkSync(userCampaignFile(userId)); } catch {}
     }
@@ -400,12 +409,13 @@ const server = http.createServer(async (req, res) => {
         return json(res, loadJSON(userHistoryFile(userId), []).reverse());
     }
 
-    // POST /api/history/delete
-    if (req.method === 'POST' && url === '/api/history/delete') {
+    // POST /api/history/delete-bulk
+    if (req.method === 'POST' && url === '/api/history/delete-bulk') {
         try {
-            const { timestamp } = await parseBody(req);
+            const { timestamps } = await parseBody(req);
+            if (!Array.isArray(timestamps)) return json(res, { error: 'Invalid input' }, 400);
             let hist = loadJSON(userHistoryFile(userId), []);
-            hist = hist.filter(h => h.sentAt !== timestamp);
+            hist = hist.filter(h => !timestamps.includes(h.sentAt));
             saveJSON(userHistoryFile(userId), hist);
             return json(res, { success: true });
         } catch (e) { return json(res, { error: e.message }, 400); }
@@ -451,17 +461,22 @@ const server = http.createServer(async (req, res) => {
         if (!c.numbers.length || c.currentIndex >= c.numbers.length) return json(res, { error: 'No pending numbers to resume' }, 400);
         if (c.timer) clearTimeout(c.timer);
         c.running = true;
-        addLog(userId, `▶️ Resumed → ${c.numbers.length - c.currentIndex} numbers remaining`);
-        scheduleNext(userId, 2000);
+        const wait = c.remainingMs > 0 ? c.remainingMs : 2000;
+        addLog(userId, `▶️ Resumed → Continuing in ${Math.round(wait/1000)}s...`);
+        scheduleNext(userId, wait);
         return json(res, { success:true, remaining: c.numbers.length - c.currentIndex });
     }
 
     // POST /api/bulk/stop
     if (req.method === 'POST' && url === '/api/bulk/stop') {
         const c = getOrCreateCampaign(userId);
-        if (c.timer) { clearTimeout(c.timer); c.timer = null; }
+        if (c.timer) { 
+            clearTimeout(c.timer); 
+            c.timer = null; 
+            c.remainingMs = Math.max(0, c.nextRunAt - Date.now());
+        }
         c.running = false;
-        addLog(userId, `⏹️ Stopped. ✅${c.totalSent} ❌${c.totalFailed}`);
+        addLog(userId, `⏹️ Paused. Remaining: ${Math.round(c.remainingMs/1000)}s`);
         saveCampaignState(userId);
         return json(res, { success:true });
     }
