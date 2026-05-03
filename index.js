@@ -1,452 +1,321 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, Browsers } = require('@whiskeysockets/baileys');
 const pino   = require('pino');
 const http   = require('http');
-const https  = require('https');
 const QRCode = require('qrcode');
 const fs     = require('fs');
 const path   = require('path');
 const crypto = require('crypto');
+const jwt    = require('jsonwebtoken');
+const connectDB = require('./db');
+const { User, Account, Batch, BatchItem, Campaign, History, ContactMaster, Inbox, Message, Assignment } = require('./models');
+
+// ── CONFIG & DIRECTORIES ─────────────────────────────────────────────────────
+try {
+    const env = fs.readFileSync(path.join(__dirname, '.env'), 'utf8');
+    env.split(/\r?\n/).forEach(line => {
+        const i = line.indexOf('=');
+        if (i > 0) {
+            const k = line.substring(0, i).trim();
+            const v = line.substring(i + 1).trim();
+            process.env[k] = v;
+        }
+    });
+} catch(e) {}
 
 const PORT          = process.env.PORT || 3000;
-const SELF_URL      = process.env.RENDER_EXTERNAL_URL || '';
-const DATA_DIR      = process.env.DATA_DIR || __dirname;
-const USERS_FILE    = path.join(DATA_DIR, 'users.json');
-const ACCOUNTS_FILE = path.join(DATA_DIR, 'accounts.json');
-const HISTORY_DIR   = path.join(DATA_DIR, 'history');
+const JWT_SECRET    = process.env.JWT_SECRET || 'wa_pro_ultra_secure_secret_2026';
+const DATA_DIR      = process.env.DATA_DIR || path.join(__dirname, 'data');
 const SESSION_DIR   = path.join(DATA_DIR, 'sessions');
-const CAMPAIGN_DIR  = path.join(DATA_DIR, 'campaigns');
 
-// Ensure dirs exist
-[HISTORY_DIR, SESSION_DIR, CAMPAIGN_DIR].forEach(d => { if(!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true }); });
+[DATA_DIR, SESSION_DIR].forEach(d => { if(!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true }); });
 
-// ── Multi-Account Bot instances ──────────────────────────────────────────────
-// bots Map: accountId → { sock, status, qr, reconnDelay, reconnTimer, userId }
+// ── SHARED STATE ─────────────────────────────────────────────────────────────
 const bots = new Map();
+const activeV2Jobs = new Map();
+const ROLES = { SUPERADMIN: 'superadmin', ADMIN: 'admin', MANAGER: 'manager', AGENT: 'agent' };
 
-// ── Active auth sessions: token → { userId, name, email, role } ──────────────
-const sessions = new Map();
+// ── CORE UTILS ───────────────────────────────────────────────────────────────
+const mkId  = () => crypto.randomBytes(12).toString('hex');
+function json(res, data, code = 200) { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(data)); }
+function parseBody(req) { return new Promise((ok, err) => { let b = ''; req.on('data', c => b += c); req.on('end', () => { try { ok(JSON.parse(b)); } catch (e) { err(e); } }); }); }
 
-const ROLES = {
-    SUPERADMIN: 'superadmin',
-    ADMIN:      'admin',
-    MANAGER:    'manager',
-    AGENT:      'agent'
-};
+// ── AUTH SYSTEM (JWT) ────────────────────────────────────────────────────────
+const signToken = (user) => jwt.sign(user, JWT_SECRET, { expiresIn: '7d' });
+const verifyToken = (token) => { try { return jwt.verify(token, JWT_SECRET); } catch(e) { return null; } };
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-const hash  = s => crypto.createHash('sha256').update(s).digest('hex');
-const mkTok = () => crypto.randomBytes(24).toString('hex');
-
-function json(res, data, code = 200) {
-    res.writeHead(code, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify(data));
-}
-function parseBody(req) {
-    return new Promise((ok, err) => {
-        let b = '';
-        req.on('data', c => b += c);
-        req.on('end', () => { try { ok(JSON.parse(b)); } catch (e) { err(e); } });
-    });
-}
-
-function loadJSON(file, def) { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return def; } }
-function saveJSON(file, data) { try { fs.writeFileSync(file, JSON.stringify(data, null, 2)); } catch {} }
-
-const loadUsers    = () => loadJSON(USERS_FILE, []);
-const saveUsers    = d  => saveJSON(USERS_FILE, d);
-const loadAccounts = () => loadJSON(ACCOUNTS_FILE, []);
-const saveAccounts = d  => saveJSON(ACCOUNTS_FILE, d);
-
-function userHistoryFile(userId)  { return path.join(HISTORY_DIR, `${userId}.json`); }
-function userCampaignFile(userId) { return path.join(CAMPAIGN_DIR, `${userId}.json`); }
-function accountSessionDir(accId) { return path.join(SESSION_DIR, accId); }
-
-function hasPermission(role, requiredRole) {
-    const weights = { [ROLES.SUPERADMIN]: 4, [ROLES.ADMIN]: 3, [ROLES.MANAGER]: 2, [ROLES.AGENT]: 1 };
-    return weights[role] >= weights[requiredRole];
-}
-
-function addHistoryRecord(userId, number, message, status, accId = 'default') {
-    const file = userHistoryFile(userId);
-    const hist = loadJSON(file, []);
-    hist.push({ 
-        id: Date.now().toString(36), userId, number, message, status, 
-        sentAt: new Date().toISOString(), accId 
-    });
-    saveJSON(file, hist);
-    const c = getOrCreateCampaign(userId);
-    c.lastUpdate = Date.now();
-}
-
-// ── Campaign per user ─────────────────────────────────────────────────────────
-const campaigns = new Map(); 
-
-function getOrCreateCampaign(userId) {
-    if (!campaigns.has(userId)) {
-        campaigns.set(userId, {
-            running:false, numbers:[], messages:[], currentIndex:0,
-            intervalMs:15000, timer:null, log:[], totalSent:0,
-            totalFailed:0, startTime:null, userId,
-            autoReplyEnabled: false, autoReplyText: "",
-            keywords: [], 
-            nextRunAt: 0, remainingMs: 0,
-            selectedAccounts: [], // [accId1, accId2]
-            currentAccountIdx: 0
-        });
-    }
-    return campaigns.get(userId);
-}
-
-function addLog(userId, msg) {
-    const c = getOrCreateCampaign(userId);
-    const t = new Date().toLocaleTimeString('en-IN', { hour12: true });
-    c.log.unshift(`[${t}] ${msg}`);
-    if (c.log.length > 300) c.log.length = 300;
-    console.log(`[${userId.slice(0,6)}] ${msg}`);
-    saveCampaignState(userId);
-}
-
-function saveCampaignState(userId) {
-    const c = getOrCreateCampaign(userId);
-    if (!c.numbers.length) return;
-    saveJSON(userCampaignFile(userId), {
-        running:c.running, numbers:c.numbers, messages:c.messages,
-        currentIndex:c.currentIndex, intervalMs:c.intervalMs,
-        totalSent:c.totalSent, totalFailed:c.totalFailed,
-        startTime:c.startTime, log:c.log.slice(0, 50),
-        autoReplyEnabled: c.autoReplyEnabled,
-        autoReplyText: c.autoReplyText,
-        keywords: c.keywords || [],
-        nextRunAt: c.nextRunAt,
-        remainingMs: c.remainingMs,
-        selectedAccounts: c.selectedAccounts || [],
-        currentAccountIdx: c.currentAccountIdx || 0
-    });
-}
-
-function scheduleNext(userId, delay) {
-    const c = getOrCreateCampaign(userId);
-    if (c.timer) clearTimeout(c.timer);
-    c.remainingMs = delay;
-    c.nextRunAt = Date.now() + delay;
-    c.timer = setTimeout(() => sendNext(userId), delay);
-    saveCampaignState(userId);
-}
-
-function loadCampaignState(userId) {
-    const s = loadJSON(userCampaignFile(userId), null);
-    if (!s || !s.numbers || s.currentIndex >= s.numbers.length) return;
-    const c = getOrCreateCampaign(userId);
-    Object.assign(c, { ...s, timer: null });
-    addLog(userId, `📂 Resuming: ${s.numbers.length - s.currentIndex} numbers remaining`);
-    if (c.running) {
-        const now = Date.now();
-        const wait = Math.max(1000, c.nextRunAt - now);
-        scheduleNext(userId, wait);
-    }
-}
-
-// ── Bulk sender ───────────────────────────────────────────────────────────────
-async function sendNext(userId) {
-    const c = getOrCreateCampaign(userId);
-    if (!c.running) return;
-
-    if (c.currentIndex >= c.numbers.length) {
-        c.running = false; c.timer = null;
-        c.nextRunAt = 0; c.remainingMs = 0;
-        addLog(userId, `🎉 Campaign Complete! ✅${c.totalSent} ❌${c.totalFailed}`);
-        try { fs.unlinkSync(userCampaignFile(userId)); } catch {}
-        return;
-    }
-
-    if (!c.selectedAccounts?.length) {
-        addLog(userId, '❌ Error: No accounts selected for campaign');
-        c.running = false; return;
-    }
-
-    // Round-robin account selection
-    const accId = c.selectedAccounts[c.currentAccountIdx % c.selectedAccounts.length];
-    c.currentAccountIdx++;
-
-    const num = String(c.numbers[c.currentIndex]).replace(/\D/g, '');
-    const jid = (num.length === 10 ? '91' + num : num) + '@s.whatsapp.net';
-    const msg = c.messages[Math.floor(Math.random() * c.messages.length)];
-    const idx = c.currentIndex + 1;
-
-    try {
-        await sendMessageSafe(userId, accId, jid, msg);
-        c.totalSent++;
-        addLog(userId, `✅ [${idx}/${c.numbers.length}] Sent via Acc:${accId.slice(0,4)} → +${num}`);
-        addHistoryRecord(userId, num, msg, 'sent', accId);
-    } catch (e) {
-        c.totalFailed++;
-        addLog(userId, `❌ [${idx}/${c.numbers.length}] Fail (Acc:${accId.slice(0,4)}): ${e.message}`);
-        addHistoryRecord(userId, num, msg, 'failed', accId);
-    }
-
-    c.currentIndex++;
-    saveCampaignState(userId);
-
-    if (c.currentIndex < c.numbers.length && c.running) {
-        const delay = 5000 + Math.random() * 10000;
-        scheduleNext(userId, delay);
-    } else if (c.running) {
-        c.running = false; c.timer = null;
-        addLog(userId, `🏁 All done! ✅${c.totalSent} ❌${c.totalFailed}`);
-    }
-}
-
-// ── Bot handling ──────────────────────────────────────────────────────────────
-async function startBotForAccount(userId, accId) {
+// ── SERVICE: MULTI-ACCOUNT ───────────────────────────────────────────────────
+async function initBot(userId, accId) {
     let bot = bots.get(accId);
-    if (!bot) { 
-        bot = { sock:null, status:'waiting', qr:null, reconnDelay:3000, reconnTimer:null, userId, accId }; 
-        bots.set(accId, bot); 
-    }
+    if (!bot) { bot = { status:'waiting', userId, accId }; bots.set(accId, bot); }
+    if (bot.isInitializing) return;
+    bot.isInitializing = true;
+    console.log(`[SYSTEM] Initializing Bot: ${accId}`);
 
     try {
-        const sessDir = accountSessionDir(accId);
-        fs.mkdirSync(sessDir, { recursive: true });
-
+        if (bot.sock) { bot.sock.ev.removeAllListeners(); try { bot.sock.ws.close(); } catch(e) {} }
+        const sessDir = path.join(SESSION_DIR, accId);
         const { state, saveCreds } = await useMultiFileAuthState(sessDir);
-        const { version }          = await fetchLatestBaileysVersion();
-
+        let version = [2, 2332, 15];
+        try { const { version: v } = await fetchLatestBaileysVersion(); version = v; } catch(e) {}
+        
         bot.sock = makeWASocket({
-            version, auth: state, printQRInTerminal: false,
+            version, auth: state, 
+            printQRInTerminal: false,
             logger: pino({ level: 'silent' }),
-            browser: ['CRM System', 'Chrome', '1.0.0'],
-            syncFullHistory: false
+            browser: Browsers.macOS('Desktop'),
+            syncFullHistory: false,
         });
 
-        bot.sock.ev.on('connection.update', update => {
-            const { connection, lastDisconnect, qr } = update;
-            if (qr) { bot.qr = qr; bot.status = 'waiting'; }
-            if (connection === 'open') {
-                bot.qr = null; bot.status = 'connected'; bot.reconnDelay = 3000;
-                const accounts = loadAccounts();
-                const acc = accounts.find(a => a.id === accId);
-                if (acc) { acc.status = 'active'; saveAccounts(accounts); }
+        bot.sock.ev.on('creds.update', saveCreds);
+        bot.sock.ev.on('connection.update', async (upd) => {
+            const { connection, lastDisconnect, qr } = upd;
+            if (qr) { bot.qr = qr; bot.status = 'waiting'; bot.isInitializing = false; }
+            if (connection === 'open') { 
+                bot.status = 'active'; bot.qr = null; bot.isInitializing = false;
+                bot.phoneNumber = bot.sock.user.id.split(':')[0];
+                bot.lastActive = new Date();
+                await Account.findOneAndUpdate({ id: accId }, { phoneNumber: bot.phoneNumber, status: 'active', lastActive: bot.lastActive });
+                console.log(`[SYSTEM] Bot Connected: ${accId} (${bot.phoneNumber})`);
             }
             if (connection === 'close') {
+                bot.isInitializing = false;
                 const code = lastDisconnect?.error?.output?.statusCode;
-                bot.status = 'disconnected'; bot.sock = null;
-                const accounts = loadAccounts();
-                const acc = accounts.find(a => a.id === accId);
-                if (acc && code === DisconnectReason.loggedOut) { 
-                    acc.status = 'logged_out'; saveAccounts(accounts); 
-                    return; 
-                }
-                bot.reconnDelay = Math.min(bot.reconnDelay * 1.5, 30000);
-                if (bot.reconnTimer) clearTimeout(bot.reconnTimer);
-                bot.reconnTimer = setTimeout(() => startBotForAccount(userId, accId), bot.reconnDelay);
+                bot.status = code === DisconnectReason.loggedOut ? 'logged_out' : 'disconnected';
+                await Account.findOneAndUpdate({ id: accId }, { status: bot.status });
+                if (code !== DisconnectReason.loggedOut) setTimeout(() => initBot(userId, accId), 10000);
             }
         });
-        bot.sock.ev.on('creds.update', saveCreds);
-
         bot.sock.ev.on('messages.upsert', async m => {
             if (m.type !== 'notify') return;
             for (const msg of m.messages) {
                 if (!msg.message || msg.key.fromMe) continue;
-                const jid = msg.key.remoteJid;
-                if (!jid || !jid.endsWith('@s.whatsapp.net')) continue;
-                const remoteNum = jid.split('@')[0];
-                const incoming = (msg.message.conversation || msg.message.extendedTextMessage?.text || '').trim();
-                addHistoryRecord(userId, remoteNum, incoming, 'received', accId);
-                addLog(userId, `📩 Reply on Account ${accId.slice(0,4)} from +${remoteNum}`);
+                const from = msg.key.remoteJid;
+                const text = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
+                await new Inbox({ id: mkId(), userId, accId, from, text }).save();
             }
         });
-    } catch (err) {
-        bot.reconnTimer = setTimeout(() => startBotForAccount(userId, accId), 5000);
-    }
+    } catch (e) { bot.isInitializing = false; setTimeout(() => initBot(userId, accId), 15000); }
 }
 
-async function sendMessageSafe(userId, accId, jid, content, options = {}) {
-    const bot = bots.get(accId);
-    if (!bot || bot.status !== 'connected') throw new Error('Account not connected');
-
-    // Anti-ban: Typing simulation
-    await bot.sock.presenceSubscribe(jid);
-    await bot.sock.sendPresenceUpdate('composing', jid);
-    await new Promise(r => setTimeout(r, 2000 + Math.random() * 3000));
-    await bot.sock.sendPresenceUpdate('paused', jid);
-
-    let msgData = {};
-    if (typeof content === 'string') {
-        msgData = { text: content };
-    } else if (content.image) {
-        msgData = { image: content.image, caption: content.caption };
-    } else if (content.video) {
-        msgData = { video: content.video, caption: content.caption };
-    } else if (content.document) {
-        msgData = { document: content.document, fileName: content.fileName, caption: content.caption };
+// ── SERVICE: CAMPAIGN V2 ─────────────────────────────────────────────────────
+async function processV2Campaign(campId) {
+    const c = await Campaign.findOne({ id: campId });
+    if (!c || c.status !== 'running') return;
+    if (c.currentIndex >= c.contacts.length) { 
+        c.status = 'completed'; 
+        await c.save(); 
+        console.log(`[CAMPAIGN] Completed: ${c.name}`);
+        return; 
     }
 
-    return await bot.sock.sendMessage(jid, msgData, options);
+    const accs = await Account.find({ id: { $in: c.accountIds } }).lean();
+    const activeAccs = accs.filter(a => bots.get(a.id)?.status === 'active');
+    
+    if (!activeAccs.length) { 
+        console.warn(`[CAMPAIGN] Paused due to NO ACTIVE ACCOUNTS: ${c.name}`);
+        c.status = 'paused'; 
+        await c.save(); 
+        return; 
+    }
+
+    const targetAcc = activeAccs[c.currentIndex % activeAccs.length];
+    const contact = c.contacts[c.currentIndex];
+    const jid = String(contact.number).replace(/\D/g, '') + '@s.whatsapp.net';
+    const message = c.template.replace(/{name}/g, contact.name || 'Friend');
+
+    try {
+        const bot = bots.get(targetAcc.id);
+        if (bot && bot.sock && bot.status === 'active') {
+            await bot.sock.sendMessage(jid, { text: message });
+            c.sentCount++;
+            await new History({ id: mkId(), num: contact.number, msg: message, status: 'sent', accId: targetAcc.id, campName: c.name, userId: c.createdBy }).save();
+        } else {
+            // Account went offline during process, skip this turn but don't increment index yet to retry with another
+            const delay = 5000;
+            activeV2Jobs.set(campId, setTimeout(() => processV2Campaign(campId), delay));
+            return;
+        }
+    } catch (e) {
+        c.failCount++;
+        await new History({ id: mkId(), num: contact.number, msg: message, status: 'failed', accId: targetAcc.id, campName: c.name, userId: c.createdBy }).save();
+    }
+
+    c.currentIndex++; 
+    await c.save();
+    const delay = (c.minDelay + Math.random() * (c.maxDelay - c.minDelay)) * 1000;
+    activeV2Jobs.set(campId, setTimeout(() => processV2Campaign(campId), delay));
 }
 
-// ── HTTP Server Logic ─────────────────────────────────────────────────────────
+// ── API ROUTES ───────────────────────────────────────────────────────────────
 const requestHandler = async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type,x-auth-token');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type,x-auth-token,authorization');
     if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
 
     const url = req.url.split('?')[0];
-
-    if (url === '/ping') { res.writeHead(200); res.end('pong'); return; }
     if (req.method === 'GET' && (url === '/' || url === '/index.html')) {
-        fs.readFile(path.join(__dirname, 'index.html'), (err, data) => {
-            if (err) { res.writeHead(500); res.end('Error'); return; }
-            res.writeHead(200, { 'Content-Type': 'text/html;charset=utf-8' }); res.end(data);
-        }); return;
+        return fs.readFile(path.join(__dirname, 'index.html'), (e, d) => { res.writeHead(200, { 'Content-Type': 'text/html' }); res.end(d); });
     }
 
-    // POST /api/register
-    if (req.method === 'POST' && url === '/api/register') {
-        try {
-            const { name, email, password } = await parseBody(req);
-            const users = loadUsers();
-            if (users.find(u => u.email === email.toLowerCase())) return json(res, { error: 'Email already registered' }, 409);
-            const user = { id: Date.now().toString(36), name, email: email.toLowerCase(), password: hash(password), role: ROLES.ADMIN, createdAt: new Date().toISOString() };
-            users.push(user); saveUsers(users);
-            const token = mkTok(); sessions.set(token, { userId: user.id, name: user.name, email: user.email, role: user.role });
-            return json(res, { success: true, token, name: user.name });
-        } catch (e) { return json(res, { error: e.message }, 400); }
-    }
-
-    // POST /api/login
-    if (req.method === 'POST' && url === '/api/login') {
-        try {
-            const { email, password } = await parseBody(req);
-            const admE = process.env.ADMIN_EMAIL;
-            const admP = process.env.ADMIN_PASS;
-            if (admE && admP && email.toLowerCase() === admE.toLowerCase() && password === admP) {
-                const token = mkTok();
-                sessions.set(token, { userId: 'admin', name: 'Master Admin', email: admE, role: ROLES.SUPERADMIN });
-                loadCampaignState('admin');
-                return json(res, { success: true, token, name: 'Master Admin' });
-            }
-            const users = loadUsers();
-            const user  = users.find(u => u.email === email.toLowerCase() && u.password === hash(password));
-            if (!user) return json(res, { error: 'Wrong email or password' }, 401);
-            const token = mkTok(); sessions.set(token, { userId: user.id, name: user.name, email: user.email, role: user.role || ROLES.ADMIN });
-            loadCampaignState(user.id);
-            return json(res, { success: true, token, name: user.name });
-        } catch (e) { return json(res, { error: e.message }, 400); }
-    }
-
-    // Auth Middleware
-    const me = sessions.get(req.headers['x-auth-token'] || '');
-    if (!me) return json(res, { error: 'Unauthorized' }, 401);
-    const { userId, role } = me;
-
-    // GET /api/accounts
-    if (req.method === 'GET' && url === '/api/accounts') {
-        const accounts = loadAccounts().filter(a => a.userId === userId || role === ROLES.SUPERADMIN);
-        const list = accounts.map(a => {
-            const bot = bots.get(a.id);
-            return { ...a, botStatus: bot ? bot.status : 'waiting' };
-        });
-        return json(res, list);
-    }
-
-    // POST /api/accounts/add
-    if (req.method === 'POST' && url === '/api/accounts/add') {
-        const { name } = await parseBody(req);
-        const accounts = loadAccounts();
-        const acc = { id: mkTok().slice(0,8), name: name || 'Account', userId, status: 'waiting', createdAt: new Date().toISOString() };
-        accounts.push(acc);
-        saveAccounts(accounts);
-        startBotForAccount(userId, acc.id);
-        return json(res, { success: true, accountId: acc.id });
-    }
-
-    // DELETE /api/accounts/delete
-    if (req.method === 'POST' && url === '/api/accounts/delete') {
-        const { accountId } = await parseBody(req);
-        let accounts = loadAccounts();
-        accounts = accounts.filter(a => a.id !== accountId);
-        saveAccounts(accounts);
-        const bot = bots.get(accountId);
-        if (bot && bot.sock) bot.sock.logout();
-        bots.delete(accountId);
-        fs.rmSync(accountSessionDir(accountId), { recursive: true, force: true });
+    if (url === '/api/signup' && req.method === 'POST') {
+        const { email, password, name } = await parseBody(req);
+        const exists = await User.findOne({ email });
+        if (exists) return json(res, { error: 'Email already registered' }, 400);
+        const hashedPassword = crypto.createHash('sha256').update(password).digest('hex');
+        const user = new User({ email, password: hashedPassword, name, role: ROLES.AGENT });
+        await user.save();
         return json(res, { success: true });
     }
 
-    // GET /api/accounts/qr
-    if (req.method === 'GET' && url === '/api/accounts/qr') {
-        const { accountId } = Object.fromEntries(new URL(req.url, `http://${req.headers.host}`).searchParams);
-        const bot = bots.get(accountId);
-        if (!bot) return json(res, { status: 'waiting', qr: null });
-        if (bot.status === 'connected') return json(res, { status: 'connected', qr: null });
-        if (bot.qr) {
-            const img = await QRCode.toDataURL(bot.qr, { width: 280, margin: 2 });
-            return json(res, { status: bot.status, qr: img });
+    if (url === '/api/login' && req.method === 'POST') {
+        const { email, password } = await parseBody(req);
+        const hashedPassword = crypto.createHash('sha256').update(password).digest('hex');
+        if (email === process.env.ADMIN_EMAIL && password === process.env.ADMIN_PASS) {
+            const token = signToken({ userId: 'admin', name: 'Master Admin', role: ROLES.SUPERADMIN });
+            return json(res, { success: true, token, name: 'Master Admin', role: ROLES.SUPERADMIN });
         }
-        return json(res, { status: bot.status || 'waiting', qr: null });
+        const user = await User.findOne({ email, password: hashedPassword });
+        if (user) {
+            const token = signToken({ userId: user._id, name: user.name, role: user.role });
+            return json(res, { success: true, token, name: user.name, role: user.role });
+        }
+        return json(res, { error: 'Invalid credentials' }, 401);
     }
 
-    // GET /api/bulk/status
-    if (req.method === 'GET' && url === '/api/bulk/status') {
-        const c = getOrCreateCampaign(userId);
-        return json(res, {
-            running:c.running, total:c.numbers.length, currentIndex:c.currentIndex,
-            totalSent:c.totalSent, totalFailed:c.totalFailed,
-            remaining:c.numbers.length - c.currentIndex,
-            log:c.log.slice(0,80), lastUpdate: c.lastUpdate || 0,
-            selectedAccounts: c.selectedAccounts || []
-        });
+    const authHeader = req.headers['x-auth-token'] || req.headers['authorization']?.split(' ')[1] || '';
+    const me = verifyToken(authHeader);
+    if (!me) return json(res, { error: 'Unauthorized access' }, 401);
+
+    // Accounts
+    if (url === '/api/v2/accounts' && req.method === 'GET') {
+        const accs = await Account.find(me.role === ROLES.SUPERADMIN ? {} : { userId: me.userId }).lean();
+        const today = new Date().setHours(0,0,0,0);
+        const result = await Promise.all(accs.map(async a => {
+            const bot = bots.get(a.id);
+            const sentToday = await History.countDocuments({ accId: a.id, time: { $gte: today }, status: 'sent' });
+            return { ...a, status: bot?.status || a.status || 'waiting', sentToday };
+        }));
+        return json(res, result);
+    }
+    if (url === '/api/v2/accounts/add' && req.method === 'POST') {
+        const { name } = await parseBody(req);
+        const accId = mkId().slice(0,8);
+        await new Account({ id: accId, name, userId: me.userId }).save();
+        initBot(me.userId, accId);
+        return json(res, { success: true, id: accId });
+    }
+    if (url === '/api/v2/account/status' && req.method === 'POST') {
+        const { id, status } = await parseBody(req);
+        await Account.findOneAndUpdate({ id }, { status });
+        const bot = bots.get(id); if(bot) bot.status = status;
+        return json(res, { success: true });
+    }
+    if (url === '/api/v2/account/delete' && req.method === 'POST') {
+        const { id } = await parseBody(req);
+        await Account.findOneAndDelete({ id });
+        const bot = bots.get(id); if(bot?.sock) bot.sock.logout().catch(() => {}); bots.delete(id);
+        return json(res, { success: true });
+    }
+    if (url === '/api/v2/accounts/qr' && req.method === 'GET') {
+        const id = new URL(req.url, `http://${req.headers.host}`).searchParams.get('id');
+        const bot = bots.get(id);
+        if (bot?.qr) return json(res, { qr: await QRCode.toDataURL(bot.qr) });
+        return json(res, { status: bot?.status || 'waiting' });
     }
 
-    // POST /api/bulk/start
-    if (req.method === 'POST' && url === '/api/bulk/start') {
-        try {
-            const { numbers, messages, accountIds } = await parseBody(req);
-            if (!numbers?.length || !messages?.length || !accountIds?.length) return json(res, { error: 'Invalid input' }, 400);
-            const c = getOrCreateCampaign(userId);
-            if (c.timer) clearTimeout(c.timer);
-            Object.assign(c, {
-                running:true, numbers, messages, currentIndex:0,
-                totalSent:0, totalFailed:0, startTime:new Date().toISOString(), 
-                selectedAccounts: accountIds, currentAccountIdx: 0, log: []
-            });
-            addLog(userId, `🚀 Campaign Started: ${numbers.length} contacts across ${accountIds.length} accounts`);
-            scheduleNext(userId, 2000);
-            return json(res, { success:true });
-        } catch (e) { return json(res, { error:e.message }, 400); }
+    if (url === '/api/v2/batch/upload' && req.method === 'POST') {
+        const { name, contacts, batchSize } = await parseBody(req);
+        const batchId = mkId().slice(0,8);
+        const numbers = contacts.map(c => String(c.number).replace(/\D/g, ''));
+        const existing = new Set((await ContactMaster.find({ number: { $in: numbers } }).select('number').lean()).map(n => n.number));
+        let valid = [], masterEntries = [];
+        for (const c of contacts) {
+            const num = String(c.number).replace(/\D/g, '');
+            if (num && num.length >= 8 && !existing.has(num)) {
+                existing.add(num);
+                masterEntries.push({ number: num, assigned: true, userId: me.userId, batchId });
+                valid.push({ id: mkId(), batchId, number: num, name: c.name || '', status: 'pending' });
+            }
+        }
+        if (!valid.length) return json(res, { error: 'No new unique numbers' }, 400);
+        await ContactMaster.insertMany(masterEntries, { ordered: false }).catch(() => {});
+        const size = parseInt(batchSize);
+        const count = Math.ceil(valid.length / size);
+        const batchEntries = [], itemEntries = [];
+        for (let i = 0; i < count; i++) {
+            const chunk = valid.slice(i * size, (i + 1) * size);
+            const subId = `${batchId}_${i+1}`;
+            batchEntries.push({ id: subId, parentBatchId: batchId, name: `${name} - Part ${i+1}`, total: chunk.length, createdBy: me.userId });
+            chunk.forEach(c => itemEntries.push({ ...c, batchId: subId }));
+        }
+        await Batch.insertMany(batchEntries);
+        await BatchItem.insertMany(itemEntries);
+        return json(res, { success: true, count: valid.length, batches: count });
     }
 
-    // GET /api/history
-    if (req.method === 'GET' && url === '/api/history') {
-        return json(res, loadJSON(userHistoryFile(userId), []).reverse());
+    if (url === '/api/v2/campaigns/start' && req.method === 'POST') {
+        const data = await parseBody(req);
+        const campId = mkId();
+        await new Campaign({ id: campId, ...data, createdBy: me.userId }).save();
+        processV2Campaign(campId);
+        return json(res, { success: true, id: campId });
     }
 
-    // POST /api/history/delete-bulk
-    if (req.method === 'POST' && url === '/api/history/delete-bulk') {
-        const { timestamps } = await parseBody(req);
-        let hist = loadJSON(userHistoryFile(userId), []);
-        hist = hist.filter(h => !timestamps.includes(h.sentAt));
-        saveJSON(userHistoryFile(userId), hist);
+    if (url === '/api/v2/campaign/control' && req.method === 'POST') {
+        const { id, action } = await parseBody(req);
+        const c = await Campaign.findOne({ id });
+        if (c) {
+            if (action === 'pause') { c.status = 'paused'; clearTimeout(activeV2Jobs.get(id)); }
+            if (action === 'resume') { c.status = 'running'; processV2Campaign(id); }
+            if (action === 'delete') { clearTimeout(activeV2Jobs.get(id)); await Campaign.findOneAndDelete({ id }); }
+            else await c.save();
+            return json(res, { success: true });
+        }
+        return json(res, { error: 'Not found' }, 404);
+    }
+
+    if (url === '/api/v2/history' && req.method === 'GET') {
+        const limit = parseInt(new URL(req.url, `http://${req.headers.host}`).searchParams.get('limit')) || 1000;
+        const hist = await History.find(me.role === ROLES.SUPERADMIN ? {} : { userId: me.userId }).sort({ time: -1 }).limit(limit).lean();
+        return json(res, hist);
+    }
+    if (url === '/api/v2/inbox' && req.method === 'GET') {
+        const inbox = await Inbox.find(me.role === ROLES.SUPERADMIN ? {} : { userId: me.userId }).sort({ time: -1 }).lean();
+        return json(res, inbox);
+    }
+    if (url === '/api/v2/inbox/reply' && req.method === 'POST') {
+        const { accId, from, text } = await parseBody(req);
+        const bot = bots.get(accId);
+        if (!bot || bot.status !== 'active') return json(res, { error: 'Account not active' }, 400);
+        await bot.sock.sendMessage(from, { text });
         return json(res, { success: true });
     }
 
-    // POST /api/bulk/stop
-    if (req.method === 'POST' && url === '/api/bulk/stop') {
-        const c = getOrCreateCampaign(userId);
-        if (c.timer) { clearTimeout(c.timer); c.timer = null; c.remainingMs = Math.max(0, c.nextRunAt - Date.now()); }
-        c.running = false;
-        addLog(userId, `⏹️ Paused`);
-        saveCampaignState(userId);
-        return json(res, { success:true });
+    if (url === '/api/v2/batch/reset' && req.method === 'POST') {
+        await ContactMaster.deleteMany(me.role === ROLES.SUPERADMIN ? {} : { userId: me.userId });
+        await Batch.deleteMany(me.role === ROLES.SUPERADMIN ? {} : { createdBy: me.userId });
+        await BatchItem.deleteMany({}); // Items are usually cleared via parent batch, but we can wipe all if needed
+        return json(res, { success: true });
     }
 
-    res.writeHead(404); res.end('Not found');
+    if (url === '/api/v2/history/clear' && req.method === 'POST') {
+        await History.deleteMany(me.role === ROLES.SUPERADMIN ? {} : { userId: me.userId });
+        return json(res, { success: true });
+    }
+
+    if (url === '/api/v2/campaigns' && req.method === 'GET') {
+        const camps = await Campaign.find(me.role === ROLES.SUPERADMIN ? {} : { createdBy: me.userId }).sort({ createdAt: -1 }).lean();
+        return json(res, camps);
+    }
+
+    res.writeHead(404); res.end();
 };
 
 const server = http.createServer(requestHandler);
-server.listen(PORT, () => {
-    console.log(`🚀 CRM Server running on port ${PORT}`);
-    const accounts = loadAccounts();
-    accounts.forEach(acc => { if (acc.status === 'active') startBotForAccount(acc.userId, acc.id); });
+server.listen(PORT, async () => {
+    console.log(`🚀 MASTER CRM V4.1.0 [USERS + DB + JWT] PORT: ${PORT}`);
+    await connectDB();
+    (await Account.find({})).forEach(a => initBot(a.userId, a.id));
+    (await Campaign.find({ status: 'running' })).forEach(c => processV2Campaign(c.id));
 });
