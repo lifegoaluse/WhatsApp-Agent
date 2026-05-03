@@ -24,7 +24,6 @@ const CAMPAIGN_DIR  = path.join(DATA_DIR, 'campaigns');
 const bots = new Map();
 
 // ── Active auth sessions: token → { userId, name, email, role } ──────────────
-// Roles: 'superadmin', 'admin', 'manager', 'agent'
 const sessions = new Map();
 
 const ROLES = {
@@ -80,7 +79,7 @@ function addHistoryRecord(userId, number, message, status, accId = 'default') {
 }
 
 // ── Campaign per user ─────────────────────────────────────────────────────────
-const campaigns = new Map(); // userId → campaign object
+const campaigns = new Map(); 
 
 function getOrCreateCampaign(userId) {
     if (!campaigns.has(userId)) {
@@ -189,7 +188,6 @@ async function sendNext(userId) {
     saveCampaignState(userId);
 
     if (c.currentIndex < c.numbers.length && c.running) {
-        // Anti-ban: Random delay between 5-15 seconds
         const delay = 5000 + Math.random() * 10000;
         scheduleNext(userId, delay);
     } else if (c.running) {
@@ -198,18 +196,7 @@ async function sendNext(userId) {
     }
 }
 
-async function sendDirect(userId, to, text) {
-    const bot = bots.get(userId);
-    if (!bot || bot.status !== 'connected' || !bot.sock) throw new Error('WhatsApp not connected');
-    const raw = to.replace(/\D/g, '');
-    const jid = (raw.length === 10 ? '91' + raw : raw) + '@s.whatsapp.net';
-    await bot.sock.sendMessage(jid, { text });
-    addLog(userId, `📤 Sent manual message to +${raw}`);
-    addHistoryRecord(userId, raw, text, 'sent');
-}
-
-// ── Per-user WhatsApp bot ─────────────────────────────────────────────────────
-// ── Per-account WhatsApp bot ──────────────────────────────────────────────────
+// ── Bot handling ──────────────────────────────────────────────────────────────
 async function startBotForAccount(userId, accId) {
     let bot = bots.get(accId);
     if (!bot) { 
@@ -233,13 +220,9 @@ async function startBotForAccount(userId, accId) {
 
         bot.sock.ev.on('connection.update', update => {
             const { connection, lastDisconnect, qr } = update;
-            if (qr) { 
-                bot.qr = qr; bot.status = 'waiting'; 
-                console.log(`📱 QR for Account ${accId.slice(0,6)}...`); 
-            }
+            if (qr) { bot.qr = qr; bot.status = 'waiting'; }
             if (connection === 'open') {
                 bot.qr = null; bot.status = 'connected'; bot.reconnDelay = 3000;
-                console.log(`✅ WA connected for Account ${accId.slice(0,6)}`);
                 const accounts = loadAccounts();
                 const acc = accounts.find(a => a.id === accId);
                 if (acc) { acc.status = 'active'; saveAccounts(accounts); }
@@ -251,7 +234,6 @@ async function startBotForAccount(userId, accId) {
                 const acc = accounts.find(a => a.id === accId);
                 if (acc && code === DisconnectReason.loggedOut) { 
                     acc.status = 'logged_out'; saveAccounts(accounts); 
-                    console.log(`🚪 Logout: Account ${accId.slice(0,6)}`); 
                     return; 
                 }
                 bot.reconnDelay = Math.min(bot.reconnDelay * 1.5, 30000);
@@ -267,16 +249,13 @@ async function startBotForAccount(userId, accId) {
                 if (!msg.message || msg.key.fromMe) continue;
                 const jid = msg.key.remoteJid;
                 if (!jid || !jid.endsWith('@s.whatsapp.net')) continue;
-                
                 const remoteNum = jid.split('@')[0];
                 const incoming = (msg.message.conversation || msg.message.extendedTextMessage?.text || '').trim();
-                
                 addHistoryRecord(userId, remoteNum, incoming, 'received', accId);
                 addLog(userId, `📩 Reply on Account ${accId.slice(0,4)} from +${remoteNum}`);
             }
         });
     } catch (err) {
-        console.error(`Bot error Account ${accId}:`, err.message);
         bot.reconnTimer = setTimeout(() => startBotForAccount(userId, accId), 5000);
     }
 }
@@ -302,21 +281,11 @@ async function sendMessageSafe(userId, accId, jid, content, options = {}) {
         msgData = { document: content.document, fileName: content.fileName, caption: content.caption };
     }
 
-    const sent = await bot.sock.sendMessage(jid, msgData, options);
-    return sent;
+    return await bot.sock.sendMessage(jid, msgData, options);
 }
 
-// ── Keep-alive ────────────────────────────────────────────────────────────────
-function startKeepAlive() {
-    if (!SELF_URL) { console.log('ℹ️ Self-ping disabled (local)'); return; }
-    setInterval(() => {
-        const u = new URL(SELF_URL + '/ping'), mod = u.protocol === 'https:' ? https : http;
-        mod.get({ hostname: u.hostname, path: '/ping', timeout: 10000 }, r => console.log(`🏓 Ping ${r.statusCode}`)).on('error', () => {}).end();
-    }, 14 * 60 * 1000);
-}
-
-// ── HTTP Server ───────────────────────────────────────────────────────────────
-const server = http.createServer(async (req, res) => {
+// ── HTTP Server Logic ─────────────────────────────────────────────────────────
+const requestHandler = async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type,x-auth-token');
@@ -324,9 +293,7 @@ const server = http.createServer(async (req, res) => {
 
     const url = req.url.split('?')[0];
 
-    // ── Public ────────────────────────────────────────────────────────────────
     if (url === '/ping') { res.writeHead(200); res.end('pong'); return; }
-
     if (req.method === 'GET' && (url === '/' || url === '/index.html')) {
         fs.readFile(path.join(__dirname, 'index.html'), (err, data) => {
             if (err) { res.writeHead(500); res.end('Error'); return; }
@@ -338,19 +305,11 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && url === '/api/register') {
         try {
             const { name, email, password } = await parseBody(req);
-            if (!name || !email || !password) return json(res, { error: 'All fields required' }, 400);
-            
-            // Prevent signup with admin email
-            if (process.env.ADMIN_EMAIL && email.toLowerCase() === process.env.ADMIN_EMAIL.toLowerCase()) {
-                return json(res, { error: 'Invalid email' }, 400);
-            }
-
             const users = loadUsers();
             if (users.find(u => u.email === email.toLowerCase())) return json(res, { error: 'Email already registered' }, 409);
-            const user = { id: Date.now().toString(36), name, email: email.toLowerCase(), password: hash(password), createdAt: new Date().toISOString() };
+            const user = { id: Date.now().toString(36), name, email: email.toLowerCase(), password: hash(password), role: ROLES.ADMIN, createdAt: new Date().toISOString() };
             users.push(user); saveUsers(users);
-            const token = mkTok(); sessions.set(token, { userId: user.id, name: user.name, email: user.email });
-            startBotForUser(user.id);
+            const token = mkTok(); sessions.set(token, { userId: user.id, name: user.name, email: user.email, role: user.role });
             return json(res, { success: true, token, name: user.name });
         } catch (e) { return json(res, { error: e.message }, 400); }
     }
@@ -359,41 +318,31 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && url === '/api/login') {
         try {
             const { email, password } = await parseBody(req);
-            if (!email || !password) return json(res, { error: 'Email and password required' }, 400);
-
-            // 1. Check Admin from Env Vars (Persistent on Free Tier)
             const admE = process.env.ADMIN_EMAIL;
             const admP = process.env.ADMIN_PASS;
             if (admE && admP && email.toLowerCase() === admE.toLowerCase() && password === admP) {
                 const token = mkTok();
-                sessions.set(token, { userId: 'admin', name: 'Master Admin', email: admE });
-                const b = bots.get('admin');
-                if (!b || (b.status === 'disconnected' && !b.reconnTimer)) startBotForUser('admin');
+                sessions.set(token, { userId: 'admin', name: 'Master Admin', email: admE, role: ROLES.SUPERADMIN });
                 loadCampaignState('admin');
                 return json(res, { success: true, token, name: 'Master Admin' });
             }
-
-            // 2. Regular users
             const users = loadUsers();
             const user  = users.find(u => u.email === email.toLowerCase() && u.password === hash(password));
             if (!user) return json(res, { error: 'Wrong email or password' }, 401);
-            const token = mkTok(); sessions.set(token, { userId: user.id, name: user.name, email: user.email });
-            const bot = bots.get(user.id);
-            if (!bot || (bot.status === 'disconnected' && !bot.reconnTimer)) startBotForUser(user.id);
+            const token = mkTok(); sessions.set(token, { userId: user.id, name: user.name, email: user.email, role: user.role || ROLES.ADMIN });
             loadCampaignState(user.id);
             return json(res, { success: true, token, name: user.name });
         } catch (e) { return json(res, { error: e.message }, 400); }
     }
 
-    // ── Auth required ─────────────────────────────────────────────────────────
+    // Auth Middleware
     const me = sessions.get(req.headers['x-auth-token'] || '');
     if (!me) return json(res, { error: 'Unauthorized' }, 401);
-    const { userId } = me;
+    const { userId, role } = me;
 
-    // ── Accounts ─────────────────────────────────────────────────────────────
     // GET /api/accounts
     if (req.method === 'GET' && url === '/api/accounts') {
-        const accounts = loadAccounts().filter(a => a.userId === userId || userId === 'admin');
+        const accounts = loadAccounts().filter(a => a.userId === userId || role === ROLES.SUPERADMIN);
         const list = accounts.map(a => {
             const bot = bots.get(a.id);
             return { ...a, botStatus: bot ? bot.status : 'waiting' };
@@ -438,45 +387,34 @@ const server = http.createServer(async (req, res) => {
         return json(res, { status: bot.status || 'waiting', qr: null });
     }
 
-    // GET /api/inbox
-    if (req.method === 'GET' && url === '/api/inbox') {
-        const hist = loadJSON(userHistoryFile(userId), []);
-        const inbox = hist.filter(h => h.status === 'received').reverse();
-        return json(res, inbox);
-    }
-
-    // GET /api/qr — legacy support
-    if (req.method === 'GET' && url === '/api/qr') {
-        const userAccs = loadAccounts().filter(a => a.userId === userId);
-        if (!userAccs.length) return json(res, { status: 'waiting', qr: null });
-        const bot = bots.get(userAccs[0].id);
-        if (!bot) return json(res, { status: 'waiting', qr: null });
-        if (bot.status === 'connected') return json(res, { status: 'connected', qr: null });
-        if (bot.qr) {
-            const img = await QRCode.toDataURL(bot.qr, { width: 280, margin: 2 });
-            return json(res, { status: bot.status, qr: img });
-        }
-        return json(res, { status: bot.status || 'waiting', qr: null });
-    }
-
-    // GET /api/bulk/status — user's campaign + pending numbers
+    // GET /api/bulk/status
     if (req.method === 'GET' && url === '/api/bulk/status') {
-        const c   = getOrCreateCampaign(userId);
-        const bot = bots.get(userId);
-        const pending = c.numbers.slice(c.currentIndex);
+        const c = getOrCreateCampaign(userId);
         return json(res, {
             running:c.running, total:c.numbers.length, currentIndex:c.currentIndex,
             totalSent:c.totalSent, totalFailed:c.totalFailed,
             remaining:c.numbers.length - c.currentIndex,
-            intervalMs:c.intervalMs, log:c.log.slice(0,80),
-            botStatus: bot ? bot.status : 'waiting',
-            pendingNumbers: pending,
-            messages: c.messages,
-            autoReplyEnabled: c.autoReplyEnabled,
-            autoReplyText: c.autoReplyText,
-            keywords: c.keywords || [],
-            lastUpdate: c.lastUpdate || 0
+            log:c.log.slice(0,80), lastUpdate: c.lastUpdate || 0,
+            selectedAccounts: c.selectedAccounts || []
         });
+    }
+
+    // POST /api/bulk/start
+    if (req.method === 'POST' && url === '/api/bulk/start') {
+        try {
+            const { numbers, messages, accountIds } = await parseBody(req);
+            if (!numbers?.length || !messages?.length || !accountIds?.length) return json(res, { error: 'Invalid input' }, 400);
+            const c = getOrCreateCampaign(userId);
+            if (c.timer) clearTimeout(c.timer);
+            Object.assign(c, {
+                running:true, numbers, messages, currentIndex:0,
+                totalSent:0, totalFailed:0, startTime:new Date().toISOString(), 
+                selectedAccounts: accountIds, currentAccountIdx: 0, log: []
+            });
+            addLog(userId, `🚀 Campaign Started: ${numbers.length} contacts across ${accountIds.length} accounts`);
+            scheduleNext(userId, 2000);
+            return json(res, { success:true });
+        } catch (e) { return json(res, { error:e.message }, 400); }
     }
 
     // GET /api/history
@@ -486,102 +424,29 @@ const server = http.createServer(async (req, res) => {
 
     // POST /api/history/delete-bulk
     if (req.method === 'POST' && url === '/api/history/delete-bulk') {
-        try {
-            const { timestamps } = await parseBody(req);
-            if (!Array.isArray(timestamps)) return json(res, { error: 'Invalid input' }, 400);
-            let hist = loadJSON(userHistoryFile(userId), []);
-            hist = hist.filter(h => !timestamps.includes(h.sentAt));
-            saveJSON(userHistoryFile(userId), hist);
-            return json(res, { success: true });
-        } catch (e) { return json(res, { error: e.message }, 400); }
-    }
-
-    // POST /api/send-direct
-    if (req.method === 'POST' && url === '/api/send-direct') {
-        try {
-            const { to, text } = await parseBody(req);
-            if (!to || !text) return json(res, { error: 'Missing fields' }, 400);
-            await sendDirect(userId, to, text);
-            return json(res, { success: true });
-        } catch (e) { return json(res, { error: e.message }, 400); }
-    }
-
-    // POST /api/bulk/start
-    if (req.method === 'POST' && url === '/api/bulk/start') {
-        try {
-            const body     = await parseBody(req);
-            const numbers  = (body.numbers || []).map(n => String(n).replace(/\D/g, '')).filter(n => n.length >= 10);
-            const messages = (body.messages || []).filter(m => m && m.trim());
-            if (!numbers.length)  return json(res, { error: 'No valid numbers' }, 400);
-            if (!messages.length) return json(res, { error: 'No messages' }, 400);
-            const c = getOrCreateCampaign(userId);
-            if (c.timer) clearTimeout(c.timer);
-            Object.assign(c, {
-                running:true, numbers, messages, currentIndex:0,
-                totalSent:0, totalFailed:0, intervalMs:body.intervalMs || 600000,
-                log:[], startTime:new Date().toISOString(), timer:null,
-                autoReplyEnabled: !!body.autoReplyEnabled,
-                autoReplyText: body.autoReplyText || "",
-                keywords: body.keywords || []
-            });
-            addLog(userId, `🚀 Started → ${numbers.length} numbers, ${messages.length} msgs, ${Math.round(c.intervalMs/60000)}min`);
-            scheduleNext(userId, 2000);
-            return json(res, { success:true, total:numbers.length });
-        } catch (e) { return json(res, { error:e.message }, 400); }
-    }
-
-    // POST /api/bulk/resume
-    if (req.method === 'POST' && url === '/api/bulk/resume') {
-        const c = getOrCreateCampaign(userId);
-        if (!c.numbers.length || c.currentIndex >= c.numbers.length) return json(res, { error: 'No pending numbers to resume' }, 400);
-        if (c.timer) clearTimeout(c.timer);
-        c.running = true;
-        const wait = c.remainingMs > 0 ? c.remainingMs : 2000;
-        addLog(userId, `▶️ Resumed → Continuing in ${Math.round(wait/1000)}s...`);
-        scheduleNext(userId, wait);
-        return json(res, { success:true, remaining: c.numbers.length - c.currentIndex });
+        const { timestamps } = await parseBody(req);
+        let hist = loadJSON(userHistoryFile(userId), []);
+        hist = hist.filter(h => !timestamps.includes(h.sentAt));
+        saveJSON(userHistoryFile(userId), hist);
+        return json(res, { success: true });
     }
 
     // POST /api/bulk/stop
     if (req.method === 'POST' && url === '/api/bulk/stop') {
         const c = getOrCreateCampaign(userId);
-        if (c.timer) { 
-            clearTimeout(c.timer); 
-            c.timer = null; 
-            c.remainingMs = Math.max(0, c.nextRunAt - Date.now());
-        }
+        if (c.timer) { clearTimeout(c.timer); c.timer = null; c.remainingMs = Math.max(0, c.nextRunAt - Date.now()); }
         c.running = false;
-        addLog(userId, `⏹️ Paused. Remaining: ${Math.round(c.remainingMs/1000)}s`);
+        addLog(userId, `⏹️ Paused`);
         saveCampaignState(userId);
         return json(res, { success:true });
     }
 
-    // POST /api/reset
-    if (req.method === 'POST' && url === '/api/reset') {
-        const bot = bots.get(userId);
-        if (bot && bot.reconnTimer) clearTimeout(bot.reconnTimer);
-        try { if (bot && bot.sock) await bot.sock.logout(); } catch {}
-        fs.rmSync(userSessionDir(userId), { recursive:true, force:true });
-        bots.delete(userId);
-        setTimeout(() => startBotForUser(userId), 1000);
-        return json(res, { success:true });
-    }
-
-    res.writeHead(404);
-    res.end('Not found');
+    res.writeHead(404); res.end('Not found');
 };
 
-async function boot() {
+const server = http.createServer(requestHandler);
+server.listen(PORT, () => {
+    console.log(`🚀 CRM Server running on port ${PORT}`);
     const accounts = loadAccounts();
-    console.log(`🚀 Booting System: Found ${accounts.length} accounts`);
-    for (const acc of accounts) {
-        if (acc.status === 'active') {
-            await startBotForAccount(acc.userId, acc.id);
-        }
-    }
-}
-
-boot();
-
-const server = http.createServer(app);
-server.listen(PORT, () => console.log(`🚀 CRM Server running on port ${PORT}`));
+    accounts.forEach(acc => { if (acc.status === 'active') startBotForAccount(acc.userId, acc.id); });
+});
